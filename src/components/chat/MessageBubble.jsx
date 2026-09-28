@@ -32,15 +32,29 @@ const DELETE_WINDOW_MS = 48 * 3600 * 1000;
 const EMOJI_ONLY = /^(\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}‍️]|\s)+$/u;
 
 function RichText({ text }) {
-  return linkify(text).map((part, i) =>
-    typeof part === 'string' ? (
-      part
-    ) : (
+  return linkify(text).map((part, i) => {
+    if (typeof part === 'string') return part;
+    if (part.phone) {
+      return (
+        <button
+          key={i}
+          type="button"
+          className="phone-link"
+          onClick={(e) => {
+            e.stopPropagation();
+            useUI.getState().openPhoneMenu({ x: e.clientX, y: e.clientY, phone: part.phone });
+          }}
+        >
+          {part.phone}
+        </button>
+      );
+    }
+    return (
       <a key={i} href={part.url} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>
         {part.url}
       </a>
-    )
-  );
+    );
+  });
 }
 
 function ReplyQuote({ reply, conv, me, onClick }) {

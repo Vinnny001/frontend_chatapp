@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, uploadFile } from '../lib/api.js';
-import { emitAck, emitVolatile } from '../lib/socket.js';
+import { emitAck, emitVolatile, getSocket } from '../lib/socket.js';
+import { cancelBackground, queueInBackground, sendPayload } from '../lib/outbox.js';
 import { uid } from '../lib/format.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { useAuth } from './auth.js';
@@ -15,6 +16,13 @@ const keyOf = (m) => m.clientId || m.id;
 // Files for optimistic media messages, kept outside state so a failed upload can be retried.
 const pendingFiles = new Map();
 const typingTimers = new Map();
+// clientIds currently being sent, so a retry never runs twice in parallel.
+const inFlight = new Set();
+
+const isOnline = () => !!getSocket()?.connected;
+const authToken = () => useAuth.getState().token;
+// Errors that mean "no connection" (keep queued) rather than "server refused" (show failed).
+const isNetworkError = (e) => e?.status === 0 || /respond|connect|network|fetch/i.test(e?.message || '');
 
 /** Merges message lists by clientId/id. Confirmed messages replace their pending copies. */
 function mergeItems(...lists) {
@@ -59,6 +67,11 @@ export function canSendIn(conv, me) {
   if (conv.type !== 'group' || !conv.onlyAdminsCanSend) return true;
   return conv.participants.find((p) => p.id === me)?.role === 'admin';
 }
+
+// While we're offline our presence info is stale, so nobody is shown as online.
+export const presenceSelector = (userId) => (s) =>
+  userId && s.connection === 'online' ? s.presence[userId] ?? null : null;
+export const isOnlineSelector = (userId) => (s) => !!presenceSelector(userId)(s)?.online;
 
 /** sent → delivered → read, derived from every other member's receipt watermark. */
 export function messageStatus(msg, conv, me) {
@@ -111,6 +124,7 @@ export const useChat = create((set, get) => {
 
     reset() {
       pendingFiles.clear();
+      inFlight.clear();
       set({
         conversations: {},
         loaded: false,
@@ -126,6 +140,22 @@ export const useChat = create((set, get) => {
 
     setConnection: (connection) => set({ connection }),
 
+    /** Shows the saved offline copy immediately; fresh data replaces it once online. */
+    hydrate(cache) {
+      if (!cache?.conversations?.length || get().loaded) return;
+      set({
+        conversations: Object.fromEntries(cache.conversations.map((c) => [c.id, c])),
+        loaded: true,
+        threads: Object.fromEntries(
+          Object.entries(cache.threads || {}).map(([id, items]) => [
+            id,
+            { items, hasMore: true, loaded: true, loading: false, stale: true },
+          ])
+        ),
+        composer: cache.drafts || {},
+      });
+    },
+
     // ---------------------------------------------------------------- conversations
 
     async loadConversations() {
@@ -138,15 +168,12 @@ export const useChat = create((set, get) => {
     async resync() {
       await get().loadConversations().catch(() => {});
       const { activeId } = get();
+      // Keep what we have for offline use, but refetch each chat when it is next opened.
       set((s) => ({
-        threads: Object.fromEntries(
-          Object.entries(s.threads)
-            .filter(([id]) => id === activeId)
-            .map(([id, t]) => [id, { ...t, loaded: true }])
-        ),
+        threads: Object.fromEntries(Object.entries(s.threads).map(([id, t]) => [id, { ...t, stale: true }])),
       }));
       if (activeId) await get().loadMessages(activeId);
-      get().retryFailed();
+      get().retryPending();
     },
 
     async fetchPresence(userIds) {
@@ -228,8 +255,8 @@ export const useChat = create((set, get) => {
       useUI.getState().setInfoOpen(false);
       if (!id) return;
       const t = get().threads[id];
-      if (!t?.loaded && !t?.loading) get().loadMessages(id);
-      else get().markRead(id);
+      if ((!t?.loaded || t.stale) && !t?.loading) get().loadMessages(id);
+      if (t?.loaded) get().markRead(id);
     },
 
     closeConversation: () => set({ activeId: null }),
@@ -245,16 +272,23 @@ export const useChat = create((set, get) => {
         const oldest = thread.items.find((m) => !m.pending);
         if (older && oldest) q.set('before', oldest.createdAt);
         const { messages, hasMore } = await api(`/api/conversations/${convId}/messages?${q}`);
-        patchThread(convId, (t) => ({
-          items: older ? mergeItems(messages, t.items) : mergeItems(t.items, messages),
-          hasMore: older || !t.loaded ? hasMore : t.hasMore,
-          loaded: true,
-          loading: false,
-        }));
+        patchThread(convId, (t) => {
+          if (older) return { items: mergeItems(messages, t.items), hasMore, loading: false };
+          // A stale offline copy may have a gap before the newest page: replace it, keeping
+          // only messages that are still waiting to be sent.
+          const base = t.stale ? t.items.filter((m) => m.pending) : t.items;
+          return {
+            items: mergeItems(base, messages),
+            hasMore: t.stale || !t.loaded ? hasMore : t.hasMore,
+            loaded: true,
+            loading: false,
+            stale: false,
+          };
+        });
         if (!older) get().markRead(convId);
       } catch (e) {
         patchThread(convId, () => ({ loading: false }));
-        toast(e.message, 'error');
+        if (!isNetworkError(e)) toast(e.message, 'error');
       }
     },
 
@@ -335,35 +369,35 @@ export const useChat = create((set, get) => {
 
     async deliver(msg) {
       const convId = msg.conversationId;
+      if (inFlight.has(msg.clientId)) return;
       // Always work from the latest copy: a retry may pass a stale snapshot.
       const current = () => get().threads[convId]?.items.find((m) => m.clientId === msg.clientId) || msg;
       patchItem(convId, msg.clientId, { status: 'pending' });
+
+      // Offline: keep it queued (clock icon). It is sent on reconnect, or on Android by the
+      // background worker as soon as the network returns, even if the app is closed.
+      if (!isOnline()) {
+        queueInBackground(current(), authToken());
+        return;
+      }
+
+      inFlight.add(msg.clientId);
       try {
-        let media = current().remoteMedia || current().media;
         if (current().needsUpload) {
           const file = pendingFiles.get(msg.clientId);
           if (!file) throw new Error('File is no longer available');
           const uploaded = await uploadFile(file, {
             onProgress: (progress) => patchItem(convId, msg.clientId, { progress }),
           });
-          media = { ...uploaded, duration: msg.media?.duration };
           pendingFiles.delete(msg.clientId);
-          patchItem(convId, msg.clientId, { needsUpload: false, remoteMedia: media });
+          patchItem(convId, msg.clientId, {
+            needsUpload: false,
+            remoteMedia: { ...uploaded, duration: msg.media?.duration },
+          });
         }
 
-        const { message } = await emitAck(
-          'message:send',
-          {
-            conversationId: convId,
-            clientId: msg.clientId,
-            type: msg.type,
-            text: msg.text,
-            media: media || undefined,
-            replyTo: msg.replyTo?.id ?? null,
-            forwarded: msg.forwarded,
-          },
-          20000
-        );
+        const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(current()) }, 20000);
+        cancelBackground(msg.clientId);
         addItems(convId, [message]);
         patchConversation(convId, (c) =>
           c.lastMessage?.clientId === message.clientId
@@ -372,14 +406,30 @@ export const useChat = create((set, get) => {
         );
         if (useUI.getState().sounds) playSent();
       } catch (e) {
-        patchItem(convId, msg.clientId, { status: 'failed', error: e.message });
-        if (!/respond|connect/i.test(e.message)) toast(e.message, 'error');
+        if (isNetworkError(e)) {
+          // Connection dropped mid-send: stay queued and try again automatically.
+          patchItem(convId, msg.clientId, { status: 'pending' });
+          queueInBackground(current(), authToken());
+        } else {
+          patchItem(convId, msg.clientId, { status: 'failed', error: e.message });
+          toast(e.message, 'error');
+        }
+      } finally {
+        inFlight.delete(msg.clientId);
       }
     },
 
-    retryFailed() {
+    /** Sends everything still queued (called on reconnect and when the app resumes). */
+    retryPending() {
       for (const t of Object.values(get().threads)) {
-        for (const m of t.items) if (m.pending && m.status === 'failed') get().deliver(m);
+        for (const m of t.items) if (m.pending && m.status === 'pending') get().deliver(m);
+      }
+    },
+
+    /** Hands every queued message to the Android background sender (app going to background). */
+    queueAllInBackground() {
+      for (const t of Object.values(get().threads)) {
+        for (const m of t.items) if (m.pending && m.status === 'pending') queueInBackground(m, authToken());
       }
     },
 

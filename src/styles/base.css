@@ -640,3 +640,43 @@ h3 {
 .hidden-media {
   display: none;
 }
+
+.btn-sm {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+
+.menu-header {
+  padding: 8px 18px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13.5px;
+  max-width: 280px;
+}
+
+.menu-header.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-header.person span {
+  display: grid;
+}
+
+.menu-header.person strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

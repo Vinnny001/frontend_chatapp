@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Network } from '@capacitor/network';
 import { connectSocket, disconnectSocket } from './socket.js';
 import { requestNotificationPermission } from './notify.js';
+import { clearCache, loadCache, saveCache } from './cache.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
 import { useChat } from '../store/chat.js';
@@ -10,18 +13,44 @@ import { toast } from '../store/ui.js';
 export function useRealtime(token) {
   useEffect(() => {
     if (!token) return undefined;
+    const userId = useAuth.getState().user?.id;
     const chat = useChat.getState();
     const calls = useCall.getState();
+    const cleanups = [];
+
+    // 1) Show the saved offline copy straight away, then refresh from the server.
+    chat.hydrate(loadCache(userId));
+    let initialLoadOk = true;
+    chat.loadConversations().catch((e) => {
+      initialLoadOk = false;
+      if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
+    });
+    requestNotificationPermission();
+
+    // 2) Keep the offline copy up to date (debounced).
+    let saveTimer = null;
+    const saveNow = () => {
+      clearTimeout(saveTimer);
+      saveCache(userId, useChat.getState());
+    };
+    cleanups.push(
+      useChat.subscribe((s, prev) => {
+        if (s.conversations === prev.conversations && s.threads === prev.threads && s.composer === prev.composer) return;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveNow, 1000);
+      })
+    );
+    window.addEventListener('pagehide', saveNow);
+    cleanups.push(() => window.removeEventListener('pagehide', saveNow));
+
+    // 3) Realtime connection.
     const socket = connectSocket(token);
     let everConnected = false;
 
-    chat.loadConversations().catch((e) => toast(e.message, 'error'));
-    requestNotificationPermission();
-
     socket.on('connect', () => {
       chat.setConnection('online');
-      if (everConnected) chat.resync();
-      else chat.retryFailed();
+      if (everConnected || !initialLoadOk) chat.resync();
+      else chat.retryPending();
       everConnected = true;
     });
     socket.on('disconnect', () => chat.setConnection('offline'));
@@ -52,14 +81,47 @@ export function useRealtime(token) {
     socket.on('call:signal', calls.onSignal);
     socket.on('call:handled-elsewhere', calls.onHandledElsewhere);
 
+    // 4) Follow the device's network state: drop the socket as soon as the phone goes offline
+    //    (so new messages queue instead of waiting on a dead connection) and reconnect the
+    //    moment it comes back instead of waiting for socket.io's backoff.
+    const onOnline = () => {
+      if (!socket.connected) socket.connect();
+    };
+    const onOffline = () => {
+      socket.disconnect();
+      chat.setConnection('offline');
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    cleanups.push(() => window.removeEventListener('online', onOnline));
+    cleanups.push(() => window.removeEventListener('offline', onOffline));
+    const netHandle = Network.addListener('networkStatusChange', (status) => (status.connected ? onOnline() : onOffline()));
+    cleanups.push(() => netHandle.then((h) => h.remove()).catch(() => {}));
+
+    // 5) App lifecycle (Capacitor): leaving → save + hand queued messages to the background
+    //    sender; coming back → send whatever is still queued.
+    const appHandle = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) {
+        saveNow();
+        useChat.getState().queueAllInBackground();
+      } else {
+        onOnline();
+        useChat.getState().retryPending();
+      }
+    });
+    cleanups.push(() => appHandle.then((h) => h.remove()).catch(() => {}));
+
     const onVisible = () => {
       const { activeId, markRead } = useChat.getState();
       if (document.visibilityState === 'visible' && activeId) markRead(activeId);
     };
     document.addEventListener('visibilitychange', onVisible);
+    cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
 
     return () => {
-      document.removeEventListener('visibilitychange', onVisible);
+      cleanups.forEach((fn) => fn());
+      if (useAuth.getState().token) saveNow();
+      else clearCache(userId); // signed out: don't leave their chats on the device
       disconnectSocket();
       useCall.getState().call && useCall.getState().finish('Signed out');
       useChat.getState().reset();

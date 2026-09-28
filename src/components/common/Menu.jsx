@@ -1,18 +1,31 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-/** Floating context menu positioned at (x, y), kept inside the viewport. */
+/**
+ * Floating context menu positioned at (x, y), kept inside the viewport. Rendered into
+ * <body> because ancestors with backdrop-filter/transform would otherwise capture
+ * position: fixed and push the menu off-screen.
+ */
 export default function Menu({ x, y, items, onClose, header }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
 
+  // Re-clamp whenever the menu's size changes too (e.g. items that arrive after a lookup).
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPos({
-      left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
-      top: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
-    });
+    if (!el) return undefined;
+    const place = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const next = {
+        left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
+        top: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
+      };
+      setPos((cur) => (cur.left === next.left && cur.top === next.top ? cur : next));
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [x, y]);
 
   useEffect(() => {
@@ -28,7 +41,7 @@ export default function Menu({ x, y, items, onClose, header }) {
     };
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div className="menu" ref={ref} style={pos} role="menu">
       {header}
       {items.filter(Boolean).map((item) => (
@@ -45,7 +58,8 @@ export default function Menu({ x, y, items, onClose, header }) {
           <span>{item.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 

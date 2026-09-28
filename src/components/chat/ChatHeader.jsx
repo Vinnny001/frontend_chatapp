@@ -5,13 +5,13 @@ import Menu from '../common/Menu.jsx';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { conversationTitle, peerOf, useChat } from '../../store/chat.js';
+import { conversationTitle, peerOf, useChat, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
 export function useSubtitle(conv, me) {
   const typing = useChat((s) => s.typing[conv.id]);
   const peer = peerOf(conv, me);
-  const presence = useChat((s) => (peer ? s.presence[peer.id] : null));
+  const presence = useChat(presenceSelector(peer?.id));
 
   const typers = Object.entries(typing || {}).filter(([id]) => id !== me);
   if (typers.length) {

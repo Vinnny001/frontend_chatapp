@@ -55,12 +55,16 @@ export function formatDuration(seconds = 0) {
 export const sameDay = (a, b) => startOfDay(new Date(a)) === startOfDay(new Date(b));
 
 export function initials(name = '') {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join('') || '?';
+  // First letter/digit of the first two words, so "Wanjiku (school)" gives "WS", not "W(".
+  return (
+    name
+      .split(/\s+/)
+      .map((p) => p.match(/[\p{L}\p{N}]/u)?.[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '?'
+  );
 }
 
 export function uid() {
@@ -69,14 +73,18 @@ export function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-/** Splits text into plain strings and {url} parts so links can be rendered clickable. */
+// Links, or phone numbers written internationally (+254 712 345 678) or locally
+// (0712 345 678 / 0712-345-678). Dates, prices and short codes don't have this shape.
+const LINK_OR_PHONE =
+  /\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]|(?<![\w+/.])(?:\+\d{1,3}(?:[\s-]?\d){7,12}|0\d(?:[\s-]?\d){7,10})(?![\w/])/gi;
+
+/** Splits text into plain strings, {url} and {phone} parts so they can be made tappable. */
 export function linkify(text) {
   const parts = [];
-  const re = /\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]/gi;
   let last = 0;
-  for (const match of text.matchAll(re)) {
+  for (const match of text.matchAll(LINK_OR_PHONE)) {
     if (match.index > last) parts.push(text.slice(last, match.index));
-    parts.push({ url: match[0] });
+    parts.push(/^https?:/i.test(match[0]) ? { url: match[0] } : { phone: match[0] });
     last = match.index + match[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));

@@ -13,6 +13,7 @@ import InfoPanel from './components/info/InfoPanel.jsx';
 import CallOverlay from './components/call/CallOverlay.jsx';
 import MediaViewer from './components/common/MediaViewer.jsx';
 import ForwardDialog from './components/chat/ForwardDialog.jsx';
+import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
 
 function useTheme() {
@@ -37,7 +38,8 @@ function useBackButton() {
     const handle = CapacitorApp.addListener('backButton', () => {
       const ui = useUI.getState();
       const chat = useChat.getState();
-      if (ui.viewer) ui.closeViewer();
+      if (ui.phoneMenu) ui.closePhoneMenu();
+      else if (ui.viewer) ui.closeViewer();
       else if (ui.forwarding) ui.setForwarding(null);
       else if (ui.infoOpen) ui.setInfoOpen(false);
       else if (ui.panel) ui.closePanel();
@@ -64,6 +66,7 @@ function Messenger({ token }) {
       <CallOverlay />
       <MediaViewer />
       <ForwardDialog />
+      <PhoneMenu />
     </div>
   );
 }

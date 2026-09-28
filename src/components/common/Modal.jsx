@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export default function Modal({ title, onClose, children, footer, className = '' }) {
@@ -8,7 +9,7 @@ export default function Modal({ title, onClose, children, footer, className = ''
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="modal-header">
@@ -20,6 +21,7 @@ export default function Modal({ title, onClose, children, footer, className = ''
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

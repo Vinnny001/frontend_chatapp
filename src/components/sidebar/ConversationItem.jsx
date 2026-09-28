@@ -4,13 +4,13 @@ import Avatar from '../common/Avatar.jsx';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
 import { formatListTime } from '../../lib/format.js';
-import { conversationTitle, messageStatus, peerOf, previewText, useChat } from '../../store/chat.js';
+import { conversationTitle, messageStatus, peerOf, previewText, useChat, isOnlineSelector } from '../../store/chat.js';
 
 function ConversationItem({ conv, me, active }) {
   const typing = useChat((s) => s.typing[conv.id]);
   const draft = useChat((s) => s.composer[conv.id]?.draft);
   const peer = peerOf(conv, me);
-  const online = useChat((s) => (peer ? s.presence[peer.id]?.online : false));
+  const online = useChat(isOnlineSelector(peer?.id));
   const { openConversation, setPrefs, markRead } = useChat.getState();
   const { menu, open, close, longPress } = useContextMenu();
 

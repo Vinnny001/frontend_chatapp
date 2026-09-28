@@ -21,6 +21,7 @@ export const useUI = create((set, get) => ({
   infoOpen: false,
   viewer: null, // { url, type, name } for the full-screen media viewer
   forwarding: null, // message being forwarded
+  phoneMenu: null, // { x, y, phone } for a tapped phone number in a message
   toasts: [],
 
   setPref(key, value) {
@@ -33,6 +34,8 @@ export const useUI = create((set, get) => ({
   openViewer: (viewer) => set({ viewer }),
   closeViewer: () => set({ viewer: null }),
   setForwarding: (forwarding) => set({ forwarding }),
+  openPhoneMenu: (phoneMenu) => set({ phoneMenu }),
+  closePhoneMenu: () => set({ phoneMenu: null }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;

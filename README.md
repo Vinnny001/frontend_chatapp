@@ -26,7 +26,14 @@ npm run build            # production build in dist/
    ```
 3. Press ▶ Run in Android Studio.
 
-The `android/` project is committed, and its microphone and camera permissions are already set. If Gradle complains about the Java version, set Android Studio's Gradle JDK to the bundled JDK 21.
+The `android/` project is committed, and its microphone, camera and contacts permissions are already set. If Gradle complains about the Java version, set Android Studio's Gradle JDK to the bundled JDK 21.
+
+## Offline, contacts and phone numbers
+
+- **Offline:** the chat list, recent messages, drafts and unsent messages are saved on the device, so the app opens and works without a connection. Messages written offline show a clock and are sent automatically when the connection returns. The server never stores the same message twice.
+- **Sending with the app closed (Android):** queued text messages are handed to Android's WorkManager (`android/.../OutboxPlugin.java`, `OutboxWorker.java`), which sends them as soon as the phone is online again, even if the app has been closed. Photos and voice notes still waiting to upload are sent the next time the app opens.
+- **Contacts:** *New chat → Find friends from contacts* asks for permission, then shows which contacts are on ChatApp and lets you invite the rest by SMS. On the web there is an *Invite a friend* share button instead. Set `VITE_INVITE_URL` to the link invites should contain.
+- **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
 ## iOS (needs a Mac with Xcode)
 
@@ -35,9 +42,10 @@ npx cap add ios
 npm run cap:ios
 ```
 
-Add `NSMicrophoneUsageDescription` and `NSCameraUsageDescription` to `ios/App/App/Info.plist`, choose your signing team, then Run.
+Add `NSMicrophoneUsageDescription`, `NSCameraUsageDescription` and `NSContactsUsageDescription` to `ios/App/App/Info.plist`, choose your signing team, then Run.
 
 ## Production
 
+- On iOS there is no guaranteed background sending; messages written offline are sent when the app is next opened.
 - Use `https://` and `wss://` backend URLs.
 - Calls need a TURN server across mobile networks. Set it with `VITE_TURN_URL`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL`.

@@ -701,3 +701,25 @@
     box-shadow: 0 0 0 18px rgba(34, 197, 94, 0);
   }
 }
+
+.section-label.with-action {
+  justify-content: space-between;
+}
+
+.contacts-cta {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 16px 6px;
+  padding: 20px 16px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  text-align: center;
+}
+
+.contacts-cta p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+}

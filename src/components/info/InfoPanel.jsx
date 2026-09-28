@@ -12,7 +12,7 @@ import { mediaUrl } from '../../lib/config.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { conversationTitle, peerOf, useChat } from '../../store/chat.js';
+import { conversationTitle, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
 const DISAPPEARING = [
@@ -103,7 +103,7 @@ function AddMembersModal({ conv, onClose }) {
 
 function MemberRow({ member, conv, me, amAdmin }) {
   const [menu, setMenu] = useState(null);
-  const online = useChat((s) => s.presence[member.id]?.online);
+  const online = useChat(isOnlineSelector(member.id));
   const openDirect = useChat((s) => s.openDirect);
   const isMe = member.id === me;
 
@@ -173,7 +173,7 @@ function InfoContent({ conv }) {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(conv.name || '');
   const peer = peerOf(conv, me);
-  const presence = useChat((s) => (peer ? s.presence[peer.id] : null));
+  const presence = useChat(presenceSelector(peer?.id));
   const isGroup = conv.type === 'group';
   const amAdmin = isGroup && conv.me?.role === 'admin';
   const canEdit = !isGroup || amAdmin;

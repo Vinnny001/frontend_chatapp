@@ -1070,3 +1070,12 @@
   font-size: 13px;
   color: var(--text-3) !important;
 }
+
+/* phone numbers inside messages */
+.phone-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font: inherit;
+  display: inline;
+}
