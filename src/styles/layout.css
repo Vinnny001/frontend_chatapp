@@ -1,0 +1,507 @@
+/* ---------- app shell ---------- */
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  /* Pin the row to the viewport so a long info panel can't stretch the chat column. */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100dvh;
+  max-width: 1700px;
+  margin: 0 auto;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.app.has-info {
+  grid-template-columns: minmax(320px, 400px) 1fr minmax(320px, 380px);
+}
+
+@media (min-width: 1440px) {
+  .app {
+    height: calc(100dvh - 38px);
+    margin-top: 19px;
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+  }
+}
+
+.chat-area {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+/* Tablet: the info panel overlays the chat instead of taking a column. */
+@media (max-width: 1100px) {
+  .app.has-info {
+    grid-template-columns: minmax(300px, 360px) 1fr;
+  }
+
+  .info-panel {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(400px, 100%);
+    z-index: 40;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Phone (and the Capacitor app): one pane at a time. */
+@media (max-width: 760px) {
+  .app,
+  .app.has-info {
+    grid-template-columns: 1fr;
+  }
+
+  .app.has-chat .sidebar {
+    display: none;
+  }
+
+  .app:not(.has-chat) .chat-area {
+    display: none;
+  }
+
+  .chat-area {
+    border-left: 0;
+  }
+
+  .info-panel {
+    width: 100%;
+  }
+
+  .fab {
+    display: grid;
+  }
+}
+
+/* ---------- auth ---------- */
+
+.auth {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  background:
+    radial-gradient(1200px 600px at 0% 0%, rgba(11, 143, 106, 0.28), transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, rgba(37, 99, 235, 0.18), transparent 60%),
+    var(--bg);
+  overflow-y: auto;
+}
+
+.auth-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px clamp(24px, 6vw, 96px);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 40px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #10b981, #0b8f6a 55%, #065f46);
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(11, 143, 106, 0.4);
+}
+
+.auth-hero h1 {
+  font-size: clamp(32px, 4vw, 52px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  max-width: 14ch;
+}
+
+.auth-hero p {
+  font-size: 18px;
+  color: var(--text-2);
+  max-width: 42ch;
+  margin: 18px 0 32px;
+}
+
+.auth-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 14px;
+  color: var(--text-2);
+}
+
+.auth-features li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-features svg {
+  color: var(--accent);
+}
+
+.auth-card {
+  align-self: center;
+  justify-self: center;
+  width: min(440px, calc(100% - 32px));
+  margin: 32px 16px;
+  padding: 28px;
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  margin-bottom: 22px;
+}
+
+.auth-tabs button {
+  height: 38px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: background 0.2s, color 0.2s;
+}
+
+.auth-tabs button.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.auth-form input,
+.auth-form select {
+  height: 46px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.row-2 {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 12px;
+}
+
+.auth-form .btn {
+  height: 48px;
+  margin-top: 6px;
+}
+
+@media (max-width: 860px) {
+  .auth {
+    grid-template-columns: 1fr;
+    align-content: start;
+  }
+
+  .auth-hero {
+    padding: calc(40px + env(safe-area-inset-top)) 24px 8px;
+  }
+
+  .auth-hero h1 {
+    font-size: 30px;
+  }
+
+  .auth-hero p {
+    font-size: 16px;
+    margin-bottom: 0;
+  }
+
+  .auth-features {
+    display: none;
+  }
+
+  .auth-brand {
+    margin-bottom: 24px;
+  }
+
+  .auth-card {
+    margin-top: 20px;
+    padding: 22px;
+  }
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: calc(10px + env(safe-area-inset-top)) 10px 6px 16px;
+}
+
+.sidebar-title {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+}
+
+.sidebar-title h1 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.conn {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.conn-offline {
+  color: var(--danger);
+}
+
+.sidebar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 6px 14px 4px;
+}
+
+.sidebar-search input,
+.panel-search input {
+  width: 100%;
+  height: 38px;
+  padding-left: 40px;
+  border-radius: 10px;
+}
+
+.panel-search input {
+  padding-left: 14px;
+}
+
+.panel-search {
+  padding: 4px 4px 8px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 13px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.sidebar-search .icon-btn {
+  position: absolute;
+  right: 4px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chip:hover {
+  background: var(--panel-3);
+}
+
+.chip.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.chip-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px calc(90px + env(safe-area-inset-bottom));
+}
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+
+.conv-item:hover {
+  background: var(--hover);
+}
+
+.conv-item.active {
+  background: var(--active);
+}
+
+.conv-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.conv-top,
+.conv-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conv-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-time {
+  font-size: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.conv-item.unread .conv-time {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.conv-bottom {
+  margin-top: 2px;
+}
+
+.conv-preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.conv-preview > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-item.unread .conv-preview {
+  color: var(--text);
+}
+
+.typing-text {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.draft-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.conv-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.conv-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  transition: width 0.15s;
+}
+
+.conv-item:hover .conv-menu-btn {
+  width: 20px;
+}
+
+@media (hover: none) {
+  .conv-menu-btn {
+    display: none;
+  }
+}
+
+.conv-skeleton {
+  height: 64px;
+  margin: 6px 4px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, var(--panel-2), var(--panel-3), var(--panel-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite linear;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.list-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 48px 16px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.list-empty p {
+  margin: 0;
+}

@@ -1,0 +1,12 @@
+{
+  "appId": "com.vincent.chatapp",
+  "appName": "ChatApp",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
