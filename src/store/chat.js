@@ -3,6 +3,17 @@ import { api, uploadFile } from '../lib/api.js';
 import { emitAck, emitVolatile, getSocket } from '../lib/socket.js';
 import { cancelBackground, queueInBackground, sendPayload } from '../lib/outbox.js';
 import { uid } from '../lib/format.js';
+import {
+  deleteStoredConversation,
+  deleteStoredMedia,
+  deleteStoredMessage,
+  getStoredMedia,
+  patchStoredMessage,
+  putStoredMedia,
+  readMessages,
+  saveMessages,
+} from '../lib/localdb.js';
+import { mediaUrlsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { useAuth } from './auth.js';
 import { toast, useUI } from './ui.js';
@@ -23,6 +34,14 @@ const isOnline = () => !!getSocket()?.connected;
 const authToken = () => useAuth.getState().token;
 // Errors that mean "no connection" (keep queued) rather than "server refused" (show failed).
 const isNetworkError = (e) => e?.status === 0 || /respond|connect|network|fetch/i.test(e?.message || '');
+
+const PAGE = 40;
+
+/** Keep messages on the device and (if enabled) download their media for offline viewing. */
+function keepOffline(messages) {
+  saveMessages(messages);
+  if (useUI.getState().autoDownload) prefetchMedia(mediaUrlsOf(messages));
+}
 
 /** Merges message lists by clientId/id. Confirmed messages replace their pending copies. */
 function mergeItems(...lists) {
@@ -162,15 +181,21 @@ export const useChat = create((set, get) => {
       const { conversations } = await api('/api/conversations');
       set({ conversations: Object.fromEntries(conversations.map((c) => [c.id, c])), loaded: true });
       get().fetchPresence(conversations.flatMap((c) => c.participants.map((p) => p.id)));
+      // Latest message of every chat + profile/group photos, so the list works offline too.
+      keepOffline(conversations.map((c) => c.lastMessage).filter(Boolean));
+      prefetchMedia(conversations.flatMap((c) => [c.avatarUrl, ...c.participants.map((p) => p.avatarUrl)]));
     },
 
     /** After a reconnect: refresh the list and the open chat, drop other cached threads. */
     async resync() {
       await get().loadConversations().catch(() => {});
       const { activeId } = get();
-      // Keep what we have for offline use, but refetch each chat when it is next opened.
+      // Keep what we have for offline use, but refetch each chat when it is next opened
+      // (and allow scrolling further back again, now from the server).
       set((s) => ({
-        threads: Object.fromEntries(Object.entries(s.threads).map(([id, t]) => [id, { ...t, stale: true }])),
+        threads: Object.fromEntries(
+          Object.entries(s.threads).map(([id, t]) => [id, { ...t, stale: true, hasMore: true }])
+        ),
       }));
       if (activeId) await get().loadMessages(activeId);
       get().retryPending();
@@ -248,6 +273,7 @@ export const useChat = create((set, get) => {
       const { conversation } = await api(`/api/conversations/${id}/clear`, { method: 'POST' });
       get().upsertConversation(conversation);
       patchThread(id, () => ({ items: [], hasMore: false, loaded: true }));
+      deleteStoredConversation(id);
     },
 
     openConversation(id) {
@@ -267,11 +293,21 @@ export const useChat = create((set, get) => {
       const thread = get().threads[convId] || emptyThread();
       if (thread.loading || (older && !thread.hasMore)) return;
       patchThread(convId, () => ({ loading: true }));
+      const oldest = thread.items.find((m) => !m.pending);
+
+      // Opening a chat: show what's stored on the device straight away, then refresh.
+      if (!older && !thread.loaded) {
+        const local = await readMessages(convId, { limit: PAGE });
+        if (local.length) {
+          patchThread(convId, (t) => ({ items: mergeItems(local, t.items), loaded: true, stale: true, hasMore: true }));
+        }
+      }
+
       try {
-        const q = new URLSearchParams({ limit: '40' });
-        const oldest = thread.items.find((m) => !m.pending);
+        const q = new URLSearchParams({ limit: String(PAGE) });
         if (older && oldest) q.set('before', oldest.createdAt);
         const { messages, hasMore } = await api(`/api/conversations/${convId}/messages?${q}`);
+        keepOffline(messages);
         patchThread(convId, (t) => {
           if (older) return { items: mergeItems(messages, t.items), hasMore, loading: false };
           // A stale offline copy may have a gap before the newest page: replace it, keeping
@@ -287,8 +323,22 @@ export const useChat = create((set, get) => {
         });
         if (!older) get().markRead(convId);
       } catch (e) {
-        patchThread(convId, () => ({ loading: false }));
-        if (!isNetworkError(e)) toast(e.message, 'error');
+        if (!isNetworkError(e)) {
+          patchThread(convId, () => ({ loading: false }));
+          toast(e.message, 'error');
+          return;
+        }
+        // Offline: keep going from the copy stored on the device.
+        if (older) {
+          const local = oldest ? await readMessages(convId, { before: oldest.createdAt, limit: PAGE }) : [];
+          patchThread(convId, (t) => ({
+            items: mergeItems(local, t.items),
+            hasMore: local.length === PAGE,
+            loading: false,
+          }));
+        } else {
+          patchThread(convId, () => ({ loaded: true, loading: false }));
+        }
       }
     },
 
@@ -362,6 +412,8 @@ export const useChat = create((set, get) => {
         needsUpload: true,
       };
       pendingFiles.set(clientId, file);
+      // Also on the device, so it can still be sent after the app is closed and reopened.
+      putStoredMedia(pendingKey(clientId), file);
       addItems(convId, [optimistic]);
       patchConversation(convId, { lastMessage: optimistic, lastMessageAt: optimistic.createdAt });
       return get().deliver(optimistic);
@@ -384,12 +436,17 @@ export const useChat = create((set, get) => {
       inFlight.add(msg.clientId);
       try {
         if (current().needsUpload) {
-          const file = pendingFiles.get(msg.clientId);
+          // In memory normally; after an app restart it comes back from on-device storage.
+          const file = pendingFiles.get(msg.clientId) || (await getStoredMedia(pendingKey(msg.clientId)));
           if (!file) throw new Error('File is no longer available');
           const uploaded = await uploadFile(file, {
+            name: msg.media?.name,
             onProgress: (progress) => patchItem(convId, msg.clientId, { progress }),
           });
+          // Keep our own copy under the real URL so it never needs downloading again.
+          await rememberMedia(uploaded.url, file);
           pendingFiles.delete(msg.clientId);
+          deleteStoredMedia(pendingKey(msg.clientId));
           patchItem(convId, msg.clientId, {
             needsUpload: false,
             remoteMedia: { ...uploaded, duration: msg.media?.duration },
@@ -398,6 +455,7 @@ export const useChat = create((set, get) => {
 
         const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(current()) }, 20000);
         cancelBackground(msg.clientId);
+        saveMessages([message]);
         addItems(convId, [message]);
         patchConversation(convId, (c) =>
           c.lastMessage?.clientId === message.clientId
@@ -446,6 +504,7 @@ export const useChat = create((set, get) => {
     async deleteMessage(msg, forEveryone) {
       if (msg.pending) {
         pendingFiles.delete(msg.clientId);
+        deleteStoredMedia(pendingKey(msg.clientId));
         get().onMessageRemoved({ id: msg.id, conversationId: msg.conversationId });
         return;
       }
@@ -468,6 +527,7 @@ export const useChat = create((set, get) => {
       try {
         const { starred } = await api(`/api/messages/${msg.id}/star`, { method: 'POST' });
         patchItem(msg.conversationId, msg.id, { starred });
+        patchStoredMessage({ id: msg.id, starred });
       } catch (e) {
         toast(e.message, 'error');
       }
@@ -505,6 +565,7 @@ export const useChat = create((set, get) => {
           return;
         }
       }
+      keepOffline([msg]);
       if (get().threads[convId]?.loaded) addItems(convId, [msg]);
 
       const mine = msg.sender === me;
@@ -538,12 +599,14 @@ export const useChat = create((set, get) => {
     onMessageUpdated(patch) {
       const { id, conversationId } = patch;
       patchItem(conversationId, id, patch);
+      patchStoredMessage(patch);
       patchConversation(conversationId, (c) =>
         c.lastMessage?.id === id ? { lastMessage: { ...c.lastMessage, ...patch } } : {}
       );
     },
 
     onMessageRemoved({ id, conversationId }) {
+      deleteStoredMessage(id);
       patchThread(conversationId, (t) => ({ items: t.items.filter((m) => m.id !== id) }));
       const items = get().threads[conversationId]?.items || [];
       patchConversation(conversationId, (c) =>

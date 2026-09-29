@@ -14,7 +14,8 @@ export function sendPayload(msg) {
     clientId: msg.clientId,
     type: msg.type,
     text: msg.text,
-    media: media && !String(media.url).startsWith('blob:') ? media : undefined,
+    // Only files already uploaded (blob:/pending: are still on this device).
+    media: media && !/^(blob|pending):/.test(String(media.url)) ? media : undefined,
     replyTo: msg.replyTo?.id ?? null,
     forwarded: !!msg.forwarded,
   };

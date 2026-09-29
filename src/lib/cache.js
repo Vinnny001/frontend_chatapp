@@ -1,4 +1,5 @@
 import { storage } from './storage.js';
+import { pendingKey } from './media.js';
 
 // Offline copy of the chat list, recent messages, unsent messages and drafts, so the app
 // opens with your chats (and keeps queued messages) without a network connection.
@@ -20,10 +21,14 @@ export function saveCache(userId, { conversations, threads, composer }) {
   const savedThreads = {};
   for (const c of convs) {
     const items = (threads[c.id]?.items || [])
-      // Unuploaded files only live in memory; they can't survive an app restart.
-      .filter((m) => !m.needsUpload)
       .slice(-MAX_MESSAGES)
-      .map(({ progress, error, ...m }) => (m.pending ? { ...m, status: 'pending' } : m));
+      .map(({ progress, error, ...m }) => {
+        if (!m.pending) return m;
+        // Not uploaded yet: the file itself is kept in on-device storage under pendingKey,
+        // because the in-memory blob: URL is gone after the app restarts.
+        const media = m.needsUpload && m.media ? { ...m.media, url: pendingKey(m.clientId) } : m.media;
+        return { ...m, media, status: m.status === 'failed' ? 'failed' : 'pending' };
+      });
     if (items.length) savedThreads[c.id] = items;
   }
 

@@ -1,4 +1,4 @@
-package com.vincent.chatapp;
+package com.chatapp.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;

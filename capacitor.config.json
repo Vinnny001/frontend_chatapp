@@ -1,5 +1,5 @@
 {
-  "appId": "com.vincent.chatapp",
+  "appId": "com.chatapp.app",
   "appName": "ChatApp",
   "webDir": "dist",
   "server": {

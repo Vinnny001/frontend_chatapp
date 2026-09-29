@@ -4,6 +4,8 @@ import { Network } from '@capacitor/network';
 import { connectSocket, disconnectSocket } from './socket.js';
 import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
+import { closeLocalDb, openLocalDb } from './localdb.js';
+import { autoSyncContacts } from './contacts.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
 import { useChat } from '../store/chat.js';
@@ -19,6 +21,7 @@ export function useRealtime(token) {
     const cleanups = [];
 
     // 1) Show the saved offline copy straight away, then refresh from the server.
+    openLocalDb(userId);
     chat.hydrate(loadCache(userId));
     let initialLoadOk = true;
     chat.loadConversations().catch((e) => {
@@ -26,6 +29,12 @@ export function useRealtime(token) {
       if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
     });
     requestNotificationPermission();
+    // Phones: ask for contacts once and keep "who's on ChatApp" in sync.
+    autoSyncContacts(userId).then((state) => {
+      if (state === 'limited') {
+        toast('ChatApp can only see some of your contacts. Allow full access in Settings → ChatApp → Contacts.');
+      }
+    });
 
     // 2) Keep the offline copy up to date (debounced).
     let saveTimer = null;
@@ -121,7 +130,11 @@ export function useRealtime(token) {
     return () => {
       cleanups.forEach((fn) => fn());
       if (useAuth.getState().token) saveNow();
-      else clearCache(userId); // signed out: don't leave their chats on the device
+      else {
+        // Signed out: don't leave their chats or media on the device.
+        clearCache(userId);
+        closeLocalDb(userId, { erase: true });
+      }
       disconnectSocket();
       useCall.getState().call && useCall.getState().finish('Signed out');
       useChat.getState().reset();

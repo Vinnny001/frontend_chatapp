@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { create } from 'zustand';
 import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { Share } from '@capacitor/share';
@@ -17,6 +19,18 @@ const cacheKey = (userId) => `contacts.matches.${userId}`;
 
 export const cachedContactMatches = (userId) => storage.get(cacheKey(userId));
 
+/** Latest contact matches, shared so every screen updates when a (background) sync finishes. */
+export const useContactMatches = create(() => ({ data: null, userId: null }));
+const publish = (userId, data) => useContactMatches.setState({ userId, data });
+
+/** React hook: this user's contact matches (saved copy first, then live background syncs). */
+export function useContactMatchesFor(userId) {
+  useEffect(() => {
+    if (useContactMatches.getState().userId !== userId) publish(userId, cachedContactMatches(userId));
+  }, [userId]);
+  return useContactMatches((s) => (s.userId === userId ? s.data : null));
+}
+
 /**
  * Asks for contacts permission, reads the address book and splits it into people who
  * already have an account (can chat now) and people to invite.
@@ -24,7 +38,7 @@ export const cachedContactMatches = (userId) => storage.get(cacheKey(userId));
 export async function syncContacts(userId) {
   const perm = await Contacts.requestPermissions();
   if (perm.contacts !== 'granted' && perm.contacts !== 'limited') {
-    throw new Error('Contacts access was denied. You can allow it in your phone settings.');
+    throw new Error('Contacts access was denied. Allow it in Settings → Apps → ChatApp → Permissions → Contacts.');
   }
   const { contacts } = await Contacts.getContacts({ projection: { name: true, phones: true } });
 
@@ -60,7 +74,33 @@ export async function syncContacts(userId) {
     invite: invite.sort((a, b) => a.name.localeCompare(b.name)),
   };
   storage.set(cacheKey(userId), result);
+  publish(userId, result);
   return result;
+}
+
+const RESYNC_EVERY_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Called once the user is signed in on a phone: asks for contacts access the first time
+ * (like WhatsApp), then keeps the "who's on ChatApp" list fresh in the background.
+ * Returns the permission state so the UI can explain "limited" access on iOS.
+ */
+export async function autoSyncContacts(userId) {
+  if (!canReadContacts() || !userId) return null;
+  const { contacts: state } = await Contacts.checkPermissions();
+  const askedKey = `contacts.asked.${userId}`;
+  if (state === 'denied') return state;
+  if (state !== 'granted' && state !== 'limited' && storage.get(askedKey)) return state; // asked before, said no
+  storage.set(askedKey, true);
+
+  const cached = cachedContactMatches(userId);
+  if (state === 'granted' && cached && Date.now() - cached.syncedAt < RESYNC_EVERY_MS) return state;
+  try {
+    await syncContacts(userId); // shows the system permission dialog if not decided yet
+    return (await Contacts.checkPermissions()).contacts;
+  } catch {
+    return 'denied';
+  }
 }
 
 /** Is this phone number on ChatApp? Resolves to { user, self } or null. */

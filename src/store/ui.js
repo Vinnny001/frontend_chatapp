@@ -16,6 +16,8 @@ export const useUI = create((set, get) => ({
   wallpaper: storage.get('ui.wallpaper', 'doodle'),
   enterToSend: storage.get('ui.enterToSend', true),
   sounds: storage.get('ui.sounds', true),
+  // Download photos, videos and voice notes as they arrive so they're available offline.
+  autoDownload: storage.get('ui.autoDownload', true),
   // Sidebar overlay panels: newChat | newGroup | settings | starred | profile
   panel: null,
   infoOpen: false,

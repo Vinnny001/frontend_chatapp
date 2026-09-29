@@ -723,3 +723,9 @@
   color: var(--text-2);
   font-size: 14px;
 }
+
+.viewer-missing {
+  color: #e9edef;
+  text-align: center;
+  padding: 24px;
+}

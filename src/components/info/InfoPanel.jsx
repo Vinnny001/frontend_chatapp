@@ -9,6 +9,7 @@ import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
 import { mediaUrl } from '../../lib/config.js';
+import { useMediaSrc } from '../../lib/media.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
@@ -22,6 +23,12 @@ const DISAPPEARING = [
   { value: 604800, label: '7 days' },
   { value: 7776000, label: '90 days' },
 ];
+
+function GridThumb({ message: m }) {
+  const { src } = useMediaSrc(m.media.url);
+  if (!src) return null;
+  return m.type === 'image' ? <img src={src} alt="" loading="lazy" /> : <video src={`${src}#t=0.1`} preload="metadata" muted />;
+}
 
 function MediaGrid({ convId }) {
   const [items, setItems] = useState(null);
@@ -45,7 +52,7 @@ function MediaGrid({ convId }) {
         <div className="media-grid">
           {visual.slice(0, 12).map((m) => (
             <button key={m.id} onClick={() => openViewer({ url: m.media.url, type: m.type, name: m.media.name })}>
-              {m.type === 'image' ? <img src={mediaUrl(m.media.url)} alt="" loading="lazy" /> : <video src={`${mediaUrl(m.media.url)}#t=0.1`} preload="metadata" muted />}
+              <GridThumb message={m} />
             </button>
           ))}
         </div>

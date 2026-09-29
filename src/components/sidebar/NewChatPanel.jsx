@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { BookUser, RefreshCw, Share2, Users } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import SidePanel, { usePeopleSearch } from './SidePanel.jsx';
-import { cachedContactMatches, canReadContacts, invite, shareInvite, syncContacts } from '../../lib/contacts.js';
+import { canReadContacts, invite, shareInvite, syncContacts, useContactMatchesFor } from '../../lib/contacts.js';
 import { useAuth } from '../../store/auth.js';
 import { useChat, isOnlineSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -39,14 +39,15 @@ function InviteRow({ entry }) {
 /** Address-book section (Android/iOS): who is already on ChatApp, and who to invite. */
 function ContactsSection({ query, onStart }) {
   const userId = useAuth((s) => s.user?.id);
-  const [data, setData] = useState(() => cachedContactMatches(userId));
+  // Updates by itself when the automatic background sync finishes.
+  const data = useContactMatchesFor(userId);
   const [busy, setBusy] = useState(false);
   const [showAllInvites, setShowAllInvites] = useState(false);
 
   async function sync() {
     setBusy(true);
     try {
-      setData(await syncContacts(userId));
+      await syncContacts(userId);
     } catch (e) {
       toast(e.message, 'error');
     } finally {

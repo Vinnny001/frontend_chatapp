@@ -68,7 +68,7 @@ export default function SettingsPanel() {
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
   const logout = useAuth((s) => s.logout);
-  const { theme, wallpaper, enterToSend, sounds, setPref } = useUI();
+  const { theme, wallpaper, enterToSend, sounds, autoDownload, setPref } = useUI();
 
   async function update(body) {
     try {
@@ -137,6 +137,12 @@ export default function SettingsPanel() {
       <div className="settings-group">
         <Toggle label="Enter key sends message" hint="Shift+Enter adds a new line" checked={enterToSend} onChange={(v) => setPref('enterToSend', v)} />
         <Toggle label="Sounds" checked={sounds} onChange={(v) => setPref('sounds', v)} />
+        <Toggle
+          label="Auto-download media"
+          hint="Save photos, videos and voice notes on this device so they open offline"
+          checked={autoDownload}
+          onChange={(v) => setPref('autoDownload', v)}
+        />
         {notifications === 'default' && (
           <button className="btn btn-ghost" onClick={requestNotificationPermission}>
             Enable desktop notifications

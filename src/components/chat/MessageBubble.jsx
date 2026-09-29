@@ -2,6 +2,7 @@ import { memo, useRef, useState } from 'react';
 import {
   Ban,
   ChevronDown,
+  CloudOff,
   Copy,
   Download,
   FileText,
@@ -24,6 +25,7 @@ import MessageInfo from './MessageInfo.jsx';
 import { mediaUrl } from '../../lib/config.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
+import { useMediaSrc } from '../../lib/media.js';
 import { messageStatus, useChat } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
@@ -68,16 +70,36 @@ function ReplyQuote({ reply, conv, me, onClick }) {
         <strong>{author}</strong>
         <span>{label}</span>
       </span>
-      {reply.mediaUrl && <img src={mediaUrl(reply.mediaUrl)} alt="" />}
+      {reply.mediaUrl && <ReplyThumb url={reply.mediaUrl} />}
     </button>
+  );
+}
+
+function ReplyThumb({ url }) {
+  const { src } = useMediaSrc(url);
+  return src ? <img src={src} alt="" /> : null;
+}
+
+/** Shown when a photo/video/voice note was never downloaded and we're offline. */
+function MissingMedia({ type }) {
+  const label = { image: 'Photo', video: 'Video', voice: 'Voice message', audio: 'Audio' }[type] || 'File';
+  return (
+    <div className={`media-missing ${type}`}>
+      <CloudOff size={22} />
+      <span>{label} not downloaded. Connect to view it.</span>
+    </div>
   );
 }
 
 function Media({ msg }) {
   const openViewer = useUI((s) => s.openViewer);
   const { media } = msg;
-  const src = mediaUrl(media.url);
+  // The stored copy when available (works offline), otherwise the network URL.
+  const { src, missing } = useMediaSrc(media.url);
   const uploading = msg.pending && msg.progress != null && msg.progress < 1 && msg.status !== 'failed';
+
+  if (missing && msg.type !== 'file') return <MissingMedia type={msg.type} />;
+  if (!src && msg.type !== 'file') return <div className={`media-loading ${msg.type}`} />;
 
   if (msg.type === 'image') {
     return (
@@ -100,8 +122,11 @@ function Media({ msg }) {
   }
   if (msg.type === 'voice') return <VoicePlayer src={src} duration={media.duration} progress={uploading ? msg.progress : null} />;
   if (msg.type === 'audio') return <audio className="audio-player" src={src} controls preload="metadata" />;
+  // Documents: open from the network when online (phones can't open in-memory blobs),
+  // otherwise from the stored copy.
+  const href = navigator.onLine !== false && !String(media.url).startsWith('pending:') ? mediaUrl(media.url) : src;
   return (
-    <a className="file-card" href={src} target="_blank" rel="noreferrer" download={media.name} onClick={(e) => e.stopPropagation()}>
+    <a className="file-card" href={href || undefined} target="_blank" rel="noreferrer" download={media.name} onClick={(e) => e.stopPropagation()}>
       <FileText size={30} />
       <span className="file-info">
         <span className="file-name">{media.name || 'Document'}</span>
