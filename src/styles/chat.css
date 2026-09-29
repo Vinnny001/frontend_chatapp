@@ -1124,3 +1124,10 @@
   flex-direction: row;
   justify-content: flex-start;
 }
+
+button.file-card {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}

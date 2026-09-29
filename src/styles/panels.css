@@ -729,3 +729,9 @@
   text-align: center;
   padding: 24px;
 }
+
+button.doc-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}

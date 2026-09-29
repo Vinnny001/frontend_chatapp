@@ -6,3 +6,5 @@ dist/
 # Capacitor copies the web build here on every sync
 android/app/src/main/assets/public/
 ios/App/App/public/
+# Firebase config (per developer / CI secret)
+android/app/google-services.json

@@ -8,8 +8,9 @@ import SearchPanel from './SearchPanel.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
-import { mediaUrl } from '../../lib/config.js';
 import { useMediaSrc } from '../../lib/media.js';
+import { openDocument } from '../../lib/deviceFiles.js';
+import { readMessages } from '../../lib/localdb.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
@@ -38,7 +39,12 @@ function MediaGrid({ convId }) {
   useEffect(() => {
     api(`/api/conversations/${convId}/media`)
       .then((d) => setItems(d.messages))
-      .catch(() => setItems([]));
+      // Offline: build the gallery from the messages saved on the device.
+      .catch(() =>
+        readMessages(convId, { limit: 2000 })
+          .then((all) => setItems(all.filter((m) => m.media && !m.deletedForEveryone).reverse()))
+          .catch(() => setItems([]))
+      );
   }, [convId, lastMessageAt]);
 
   if (!items?.length) return null;
@@ -58,10 +64,10 @@ function MediaGrid({ convId }) {
         </div>
       )}
       {docs.slice(0, 6).map((m) => (
-        <a key={m.id} className="doc-row" href={mediaUrl(m.media.url)} target="_blank" rel="noreferrer" download={m.media.name}>
+        <button key={m.id} type="button" className="doc-row" onClick={() => openDocument(m.media).catch((e) => toast(e.message, 'error'))}>
           <FileText size={20} />
           <span>{m.media.name}</span>
-        </a>
+        </button>
       ))}
     </section>
   );

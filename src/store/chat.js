@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api, uploadFile } from '../lib/api.js';
 import { emitAck, emitVolatile, getSocket } from '../lib/socket.js';
-import { cancelBackground, queueInBackground, sendPayload } from '../lib/outbox.js';
+import { cancelBackground, queueInBackground, sendPayload, takeDeliveredInBackground } from '../lib/outbox.js';
 import { uid } from '../lib/format.js';
 import {
   deleteStoredConversation,
@@ -36,6 +36,9 @@ const authToken = () => useAuth.getState().token;
 const isNetworkError = (e) => e?.status === 0 || /respond|connect|network|fetch/i.test(e?.message || '');
 
 const PAGE = 40;
+
+/** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
+const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
 
 /** Keep messages on the device and (if enabled) download their media for offline viewing. */
 function keepOffline(messages) {
@@ -429,7 +432,7 @@ export const useChat = create((set, get) => {
       // Offline: keep it queued (clock icon). It is sent on reconnect, or on Android by the
       // background worker as soon as the network returns, even if the app is closed.
       if (!isOnline()) {
-        queueInBackground(current(), authToken());
+        queueInBackground(current(), authToken(), fileFor(msg.clientId));
         return;
       }
 
@@ -467,7 +470,7 @@ export const useChat = create((set, get) => {
         if (isNetworkError(e)) {
           // Connection dropped mid-send: stay queued and try again automatically.
           patchItem(convId, msg.clientId, { status: 'pending' });
-          queueInBackground(current(), authToken());
+          queueInBackground(current(), authToken(), fileFor(msg.clientId));
         } else {
           patchItem(convId, msg.clientId, { status: 'failed', error: e.message });
           toast(e.message, 'error');
@@ -477,8 +480,37 @@ export const useChat = create((set, get) => {
       }
     },
 
+    /**
+     * Android: messages the background sender delivered while the app was closed. They are
+     * marked as sent right away (works offline) and never uploaded or sent a second time.
+     */
+    async absorbBackgroundDeliveries() {
+      const delivered = await takeDeliveredInBackground();
+      for (const message of delivered) {
+        const convId = message.conversationId;
+        // Show it as sent straight away (the queued copy has the same clientId).
+        addItems(convId, [message]);
+        patchConversation(convId, (c) =>
+          c.lastMessage?.clientId === message.clientId ? { lastMessage: message, lastMessageAt: message.createdAt } : {}
+        );
+        saveMessages([message]);
+        // Then move our copy of the file under its real URL, so it never needs downloading.
+        const clientId = message.clientId;
+        pendingFiles.delete(clientId);
+        (async () => {
+          const file = await getStoredMedia(pendingKey(clientId));
+          if (file && message.media?.url) await rememberMedia(message.media.url, file);
+          await deleteStoredMedia(pendingKey(clientId));
+        })().catch(() => {
+          /* best effort: worst case the photo is downloaded again when viewed */
+        });
+      }
+      return delivered.length;
+    },
+
     /** Sends everything still queued (called on reconnect and when the app resumes). */
-    retryPending() {
+    async retryPending() {
+      await get().absorbBackgroundDeliveries(); // don't resend what the background sender already sent
       for (const t of Object.values(get().threads)) {
         for (const m of t.items) if (m.pending && m.status === 'pending') get().deliver(m);
       }
@@ -487,7 +519,7 @@ export const useChat = create((set, get) => {
     /** Hands every queued message to the Android background sender (app going to background). */
     queueAllInBackground() {
       for (const t of Object.values(get().threads)) {
-        for (const m of t.items) if (m.pending && m.status === 'pending') queueInBackground(m, authToken());
+        for (const m of t.items) if (m.pending && m.status === 'pending') queueInBackground(m, authToken(), fileFor(m.clientId));
       }
     },
 

@@ -1,4 +1,4 @@
-package com.chatapp.app;
+package com.jujatech.chatapp;
 
 import android.os.Bundle;
 
@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // App-local plugins must be registered before the bridge starts.
         registerPlugin(OutboxPlugin.class);
+        registerPlugin(DeviceFilesPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

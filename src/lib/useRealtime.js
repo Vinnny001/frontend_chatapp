@@ -23,6 +23,8 @@ export function useRealtime(token) {
     // 1) Show the saved offline copy straight away, then refresh from the server.
     openLocalDb(userId);
     chat.hydrate(loadCache(userId));
+    // Android: mark messages the background sender delivered while we were closed as sent.
+    chat.absorbBackgroundDeliveries();
     let initialLoadOk = true;
     chat.loadConversations().catch((e) => {
       initialLoadOk = false;

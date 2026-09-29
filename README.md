@@ -1,6 +1,6 @@
 # chat-frontend
 
-App ID (Android package / iOS bundle): `com.chatapp.app`.
+App ID (Android package / iOS bundle): `com.jujatech.chatapp`.
 
 ChatApp client for web, Android and iOS, built with React (JSX), Vite, Zustand, Socket.IO client and Capacitor.
 
@@ -34,8 +34,9 @@ The `android/` project is committed, and its microphone, camera and contacts per
 
 - **Offline history:** every message the app has seen is kept on the device (IndexedDB), together with the photos, videos, voice notes, files and profile pictures in them. Without a connection you can open any chat and scroll back through old messages and media, however long ago they were sent. Media downloads automatically as it arrives; *Settings → Auto-download media* turns this off. When stored media passes 1 GB, the files viewed least recently are removed first. Everything is erased from the device on sign-out.
 - **Sending offline:** text, photos, videos and voice notes written offline show a clock. They are kept on the device, even if the app is closed, and sent automatically when the connection returns. The server never stores the same message twice.
-- **Sending with the app closed (Android):** queued text messages are handed to Android's WorkManager (`android/app/src/main/java/com/chatapp/app/OutboxPlugin.java`, `OutboxWorker.java`), which sends them as soon as the phone is online again, even if the app has been closed. Photos, videos and voice notes need the app to upload them, so they're sent the next time it's open and online.
+- **Sending with the app closed (Android):** queued messages, including photos, videos and voice notes, are handed to Android's WorkManager (`android/app/src/main/java/com/jujatech/chatapp/OutboxPlugin.java`, `OutboxWorker.java`). It uploads the file and sends the message as soon as the phone is online again, even if the app has been closed. Media files are copied into the app's private storage for this (`DeviceFilesPlugin.java`) and deleted once sent. When the app next opens, even offline, it shows those messages as sent and never uploads them twice. Android decides exactly when background work runs, typically within seconds to a couple of minutes of the network returning.
 - **Contacts:** right after sign-in the app asks for contacts access (read and write, the full Android permission), then shows under *New chat* which contacts are on ChatApp and lets you invite the rest by SMS. It re-syncs in the background at most every 12 hours. If a user denied access, *New chat → Find friends from contacts* asks again. On iOS 18+, users who grant only some contacts are told how to allow full access. On the web there is an *Invite a friend* share button instead. Set `VITE_INVITE_URL` to the link invites should contain.
+- **Documents** (PDF, Word, Excel, …) are saved on the phone like other media. Tapping one opens it in the phone's own viewer app, offline too, just like WhatsApp. On the web it downloads or opens in a new tab.
 - **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
 ## iOS (needs a Mac with Xcode)

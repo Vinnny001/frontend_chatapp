@@ -22,10 +22,10 @@ import Menu, { useContextMenu } from '../common/Menu.jsx';
 import VoicePlayer from './VoicePlayer.jsx';
 import EmojiPicker from './EmojiPicker.jsx';
 import MessageInfo from './MessageInfo.jsx';
-import { mediaUrl } from '../../lib/config.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
 import { useMediaSrc } from '../../lib/media.js';
+import { openDocument } from '../../lib/deviceFiles.js';
 import { messageStatus, useChat } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
@@ -122,20 +122,40 @@ function Media({ msg }) {
   }
   if (msg.type === 'voice') return <VoicePlayer src={src} duration={media.duration} progress={uploading ? msg.progress : null} />;
   if (msg.type === 'audio') return <audio className="audio-player" src={src} controls preload="metadata" />;
-  // Documents: open from the network when online (phones can't open in-memory blobs),
-  // otherwise from the stored copy.
-  const href = navigator.onLine !== false && !String(media.url).startsWith('pending:') ? mediaUrl(media.url) : src;
+  return <DocumentCard media={media} uploadingProgress={uploading ? msg.progress : null} />;
+}
+
+/** Tap to open in the phone's document app, from the saved copy (works offline). */
+function DocumentCard({ media, uploadingProgress }) {
+  const [opening, setOpening] = useState(false);
+  async function open(e) {
+    e.stopPropagation();
+    if (opening) return;
+    setOpening(true);
+    try {
+      await openDocument(media);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setOpening(false);
+    }
+  }
+  const ext = (media.name?.split('.').pop() || 'file').toUpperCase();
   return (
-    <a className="file-card" href={href || undefined} target="_blank" rel="noreferrer" download={media.name} onClick={(e) => e.stopPropagation()}>
+    <button type="button" className="file-card" onClick={open}>
       <FileText size={30} />
       <span className="file-info">
         <span className="file-name">{media.name || 'Document'}</span>
         <span className="file-meta">
-          {uploading ? `Uploading ${Math.round(msg.progress * 100)}%` : `${formatBytes(media.size)} · ${(media.name?.split('.').pop() || 'file').toUpperCase()}`}
+          {uploadingProgress != null
+            ? `Uploading ${Math.round(uploadingProgress * 100)}%`
+            : opening
+              ? 'Opening…'
+              : `${formatBytes(media.size)} · ${ext}`}
         </span>
       </span>
       <Download size={18} />
-    </a>
+    </button>
   );
 }
 

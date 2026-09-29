@@ -1,5 +1,5 @@
 {
-  "appId": "com.chatapp.app",
+  "appId": "com.jujatech.chatapp",
   "appName": "ChatApp",
   "webDir": "dist",
   "server": {
