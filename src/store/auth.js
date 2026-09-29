@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, setApiToken, setUnauthorizedHandler } from '../lib/api.js';
 import { storage } from '../lib/storage.js';
+import { unregisterPush } from '../lib/push.js';
 
 const initialToken = storage.get('auth.token');
 setApiToken(initialToken);
@@ -37,6 +38,7 @@ export const useAuth = create((set, get) => ({
   },
 
   logout() {
+    unregisterPush(); // uses the current login token, so it must start before it's cleared
     setApiToken(null);
     storage.set('auth.token', null);
     storage.set('auth.user', null);

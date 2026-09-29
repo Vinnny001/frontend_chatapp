@@ -6,6 +6,7 @@ import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
 import { closeLocalDb, openLocalDb } from './localdb.js';
 import { autoSyncContacts } from './contacts.js';
+import { clearDeliveredNotifications, setupPush } from './push.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
 import { useChat } from '../store/chat.js';
@@ -31,12 +32,20 @@ export function useRealtime(token) {
       if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
     });
     requestNotificationPermission();
-    // Phones: ask for contacts once and keep "who's on ChatApp" in sync.
-    autoSyncContacts(userId).then((state) => {
+    // Phones: Android shows one permission prompt at a time and drops a second request made
+    // while one is open, so ask in turn: notifications first, then contacts.
+    (async () => {
+      // Push notifications for new messages (tap one to open that chat).
+      await setupPush((conversationId) => {
+        const chat = useChat.getState();
+        chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
+      }).catch((err) => console.warn('Push setup failed', err));
+      // Contacts: ask once and keep "who's on ChatApp" in sync.
+      const state = await autoSyncContacts(userId).catch(() => null);
       if (state === 'limited') {
         toast('ChatApp can only see some of your contacts. Allow full access in Settings → ChatApp → Contacts.');
       }
-    });
+    })();
 
     // 2) Keep the offline copy up to date (debounced).
     let saveTimer = null;
@@ -117,6 +126,7 @@ export function useRealtime(token) {
         useChat.getState().queueAllInBackground();
       } else {
         onOnline();
+        clearDeliveredNotifications(); // like WhatsApp: opening the app clears its notifications
         useChat.getState().retryPending();
       }
     });

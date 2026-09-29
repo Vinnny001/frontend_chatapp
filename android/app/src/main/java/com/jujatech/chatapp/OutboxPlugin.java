@@ -9,6 +9,7 @@ import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
+import androidx.work.OutOfQuotaPolicy;
 import androidx.work.WorkManager;
 
 import com.getcapacitor.JSArray;
@@ -74,6 +75,10 @@ public class OutboxPlugin extends Plugin {
         Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(OutboxWorker.class)
             .setConstraints(constraints)
+            // Expedited: run the moment the network is back (not "whenever convenient"), which
+            // is what a user expects for a message they just sent. Falls back to normal work
+            // if the app's expedited quota is used up.
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(new Data.Builder().putString("id", id).build())
             .addTag("outbox")

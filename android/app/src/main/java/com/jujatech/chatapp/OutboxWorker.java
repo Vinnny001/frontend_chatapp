@@ -1,9 +1,16 @@
 package com.jujatech.chatapp;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
 import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
+import androidx.work.ForegroundInfo;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
@@ -36,6 +43,35 @@ public class OutboxWorker extends Worker {
 
     public OutboxWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
+    }
+
+    private static final String SENDING_CHANNEL = "sending";
+    private static final int SENDING_NOTIFICATION_ID = 7201;
+
+    /**
+     * Before Android 12, expedited work runs as a short foreground service, which must show a
+     * notification while it works. Android 12+ doesn't call this.
+     */
+    @NonNull
+    @Override
+    public ForegroundInfo getForegroundInfo() {
+        Context context = getApplicationContext();
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(SENDING_CHANNEL) == null) {
+            NotificationChannel channel = new NotificationChannel(SENDING_CHANNEL, "Sending messages", NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Shown briefly while messages written offline are sent");
+            manager.createNotificationChannel(channel);
+        }
+        Notification notification = new NotificationCompat.Builder(context, SENDING_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_chat)
+            .setContentTitle("Sending messages…")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return new ForegroundInfo(SENDING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        }
+        return new ForegroundInfo(SENDING_NOTIFICATION_ID, notification);
     }
 
     @NonNull
