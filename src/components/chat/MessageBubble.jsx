@@ -10,6 +10,10 @@ import {
   Forward,
   Info,
   Pencil,
+  Phone,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
   Play,
   Reply,
   RotateCw,
@@ -17,6 +21,7 @@ import {
   Star,
   StarOff,
   Trash2,
+  Video,
 } from 'lucide-react';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
@@ -28,7 +33,8 @@ import { formatBytes, formatTime, linkify } from '../../lib/format.js';
 import { mediaKind, useMediaSrc } from '../../lib/media.js';
 import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
-import { messageStatus, useChat } from '../../store/chat.js';
+import { callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
+import { useCall } from '../../store/call.js';
 import { toast, useUI } from '../../store/ui.js';
 
 const EDIT_WINDOW_MS = 24 * 3600 * 1000;
@@ -220,6 +226,79 @@ function Reactions({ reactions, me, onToggle, conv }) {
   );
 }
 
+/** A call in the chat ("Missed voice call", "Video call · 2:31"); tap to call back. */
+function CallBubble({ msg, conv, me }) {
+  const { menu, open, close, longPress } = useContextMenu();
+  const { title, detail, missed, outgoing } = callSummary(msg, me);
+  const peer = peerOf(conv, me);
+  const Icon = missed ? PhoneMissed : outgoing ? PhoneOutgoing : PhoneIncoming;
+  const callBack = () => peer && useCall.getState().startCall(conv.id, peer, msg.call.kind);
+  return (
+    <div
+      className={`msg-row ${outgoing ? 'out' : 'in'}`}
+      data-mid={msg.id}
+      onContextMenu={open}
+      onClickCapture={longPress.onClickCapture}
+      onTouchStart={longPress.onTouchStart}
+      onTouchMove={longPress.onTouchMove}
+      onTouchEnd={longPress.onTouchEnd}
+    >
+      <div className="msg-stack">
+        <button type="button" className={`bubble call-bubble ${missed ? 'missed' : ''}`} onClick={callBack} disabled={!peer}>
+          <span className="call-icon">
+            <Icon size={18} />
+          </span>
+          <span className="call-text">
+            <span className="call-title">{title}</span>
+            <span className="call-detail">
+              {msg.call.kind === 'video' ? <Video size={12} /> : <Phone size={12} />}
+              {detail ? `${detail} · ` : ''}
+              {formatTime(msg.createdAt)}
+            </span>
+          </span>
+        </button>
+      </div>
+      {menu && (
+        <Menu
+          x={menu.x}
+          y={menu.y}
+          onClose={close}
+          items={[
+            peer && { label: msg.call.kind === 'video' ? 'Video call' : 'Voice call', icon: msg.call.kind === 'video' ? Video : Phone, onClick: callBack },
+            { label: 'Delete for me', icon: Trash2, danger: true, onClick: () => useChat.getState().deleteMessage(msg, false) },
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+const LONG_TEXT = 500;
+
+/** Long messages show the first part with "Read more", like WhatsApp. */
+function LongText({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  if (text.length <= LONG_TEXT || expanded) return <RichText text={text} />;
+  // Cut at a word boundary so a link or phone number isn't split in half.
+  const cut = text.lastIndexOf(' ', LONG_TEXT);
+  return (
+    <>
+      <RichText text={text.slice(0, cut > LONG_TEXT * 0.6 ? cut : LONG_TEXT)} />
+      …{' '}
+      <button
+        type="button"
+        className="read-more"
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded(true);
+        }}
+      >
+        Read more
+      </button>
+    </>
+  );
+}
+
 function MessageBubble({ msg, conv, me, grouped, flash }) {
   const { menu, open, close, longPress } = useContextMenu();
   const [picker, setPicker] = useState(null); // 'quick' | 'full'
@@ -236,6 +315,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
       </div>
     );
   }
+  if (isCallMessage(msg)) return <CallBubble msg={msg} conv={conv} me={me} />;
 
   const mine = msg.sender === me;
   const status = messageStatus(msg, conv, me);
@@ -331,7 +411,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
               {hasMedia && <Media msg={msg} />}
               {msg.text && (
                 <span className="text">
-                  <RichText text={msg.text} />
+                  <LongText text={msg.text} />
                 </span>
               )}
             </>

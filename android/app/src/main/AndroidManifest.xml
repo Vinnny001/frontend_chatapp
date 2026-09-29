@@ -40,6 +40,24 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="messages" />
 
+        <!-- Pushes are handled by ChatApp's own service (WhatsApp-style notifications), which
+             replaces the Capacitor plugin's plain one. -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".ChatMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Reply / Mark as read / Decline buttons on notifications -->
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
+
         <!-- Expedited message sending on Android < 12 runs as a short data-sync foreground service -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
@@ -52,6 +70,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- New-message notifications (asked at runtime on Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Incoming calls: ring full-screen over the lock screen, and vibrate -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Sending offline messages in the background -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />

@@ -16,6 +16,7 @@ import {
 import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
 import { connectionKind } from '../lib/network.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
+import { clearChatNotifications } from '../lib/native.js';
 import { useAuth } from './auth.js';
 import { toast, useUI } from './ui.js';
 
@@ -147,6 +148,7 @@ export const useChat = create((set, get) => {
     presence: {}, // userId -> { online, lastSeen }
     composer: {}, // convId -> { replyTo, editing }
     highlight: null, // { convId, id, at } message to scroll to
+    unreadMarker: null, // { convId, from, count } the "unread messages" line of the open chat
     connection: 'connecting',
 
     reset() {
@@ -161,6 +163,7 @@ export const useChat = create((set, get) => {
         presence: {},
         composer: {},
         highlight: null,
+        unreadMarker: null,
         connection: 'connecting',
       });
     },
@@ -285,6 +288,13 @@ export const useChat = create((set, get) => {
     },
 
     openConversation(id) {
+      // Where the "N unread messages" line goes: remembered before the chat is marked read,
+      // and kept while the chat stays open.
+      const conv = id ? get().conversations[id] : null;
+      const mine = conv?.participants.find((p) => p.id === meId());
+      const unreadMarker =
+        conv?.me?.unreadCount > 0 ? { convId: id, from: ts(mine?.lastReadAt), count: conv.me.unreadCount } : null;
+      if (get().activeId !== id || unreadMarker) set({ unreadMarker });
       set({ activeId: id });
       useUI.getState().setInfoOpen(false);
       if (!id) return;
@@ -393,6 +403,7 @@ export const useChat = create((set, get) => {
       const me = meId();
       const conv = get().conversations[convId];
       if (!conv?.me) return;
+      clearChatNotifications(convId); // its notifications go, here and (via the server) on my other phones
       const items = get().threads[convId]?.items || [];
       const latest = [...items].reverse().find((m) => !m.pending);
       const upTo = latest?.createdAt || conv.lastMessage?.createdAt;
@@ -634,11 +645,13 @@ export const useChat = create((set, get) => {
       if (get().threads[convId]?.loaded) addItems(convId, [msg]);
 
       const mine = msg.sender === me;
+      // Calls I answered or declined are logged in the chat but aren't "unread"; missed ones are.
+      const counts = !isCallMessage(msg) || msg.call.status === 'missed';
       patchConversation(convId, (c) => ({
         lastMessage: msg,
         lastMessageAt: msg.createdAt,
         me:
-          c.me && !mine && !fetched && !isViewing(convId)
+          c.me && !mine && counts && !fetched && !isViewing(convId)
             ? { ...c.me, unreadCount: c.me.unreadCount + 1 }
             : c.me,
       }));
@@ -652,7 +665,7 @@ export const useChat = create((set, get) => {
       }
 
       const conv = get().conversations[convId];
-      if (!conv || conv.me?.muted || isViewing(convId)) return;
+      if (!conv || conv.me?.muted || isViewing(convId) || !counts) return;
       if (useUI.getState().sounds) playIncoming();
       if (document.visibilityState !== 'visible') {
         const sender = conv.participants.find((p) => p.id === msg.sender);
@@ -734,9 +747,39 @@ export const useChat = create((set, get) => {
 
 if (import.meta.env.DEV) window.__chat = useChat; // handy for debugging in devtools
 
+export const isCallMessage = (msg) => msg?.type === 'call' && !!msg.call;
+
+const clock = (seconds) => {
+  const s = Math.max(0, Math.round(seconds || 0));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  return `${h ? `${h}:` : ''}${mm}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/**
+ * How a call entry reads for me: { title: 'Missed voice call', detail: 'No answer' | '2:31',
+ * missed, outgoing }. The caller is the message's sender.
+ */
+export function callSummary(msg, me = meId()) {
+  const { kind, status, duration } = msg.call;
+  const outgoing = msg.sender === me;
+  const noun = kind === 'video' ? 'video call' : 'voice call';
+  const Noun = kind === 'video' ? 'Video call' : 'Voice call';
+  if (status === 'answered') return { title: Noun, detail: clock(duration), missed: false, outgoing };
+  if (outgoing) {
+    return { title: Noun, detail: { declined: 'Declined', busy: 'Busy' }[status] || 'No answer', missed: false, outgoing };
+  }
+  if (status === 'declined') return { title: Noun, detail: 'Declined', missed: false, outgoing };
+  return { title: `Missed ${noun}`, detail: '', missed: true, outgoing };
+}
+
 export function previewText(msg) {
   if (!msg) return '';
   if (msg.deletedForEveryone) return 'This message was deleted';
+  if (isCallMessage(msg)) {
+    const { title, detail } = callSummary(msg);
+    return `📞 ${title}${detail ? ` · ${detail}` : ''}`;
+  }
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
   if (msg.type === 'text' || msg.type === 'system') return msg.text;
   if (msg.type === 'file') return labels.file + (msg.media?.name || 'Document');

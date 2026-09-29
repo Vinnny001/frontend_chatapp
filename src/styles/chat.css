@@ -1144,3 +1144,66 @@ button.file-card {
   cursor: default;
   opacity: 1;
 }
+
+/* long messages: "Read more" */
+.read-more {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* call entries in a chat */
+.bubble.call-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  padding: 8px 14px 8px 10px;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.call-bubble:disabled {
+  cursor: default;
+}
+
+.call-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.call-bubble.missed .call-icon {
+  color: var(--danger);
+}
+
+.call-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.call-title {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+
+.call-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--bubble-meta);
+  font-size: 12.5px;
+}

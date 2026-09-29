@@ -42,6 +42,12 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - **Notifications (Android):** new messages arrive as pop-up (heads-up) notifications with sound through Firebase Cloud Messaging, including when the app is closed. The app asks for notification permission first, then contacts, one at a time. Tapping a notification opens that chat. The backends need `FIREBASE_SERVICE_ACCOUNT`, and the Android app needs `android/app/google-services.json` from the Firebase console (it isn't committed).
 - **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
+## Notifications and calls (Android)
+
+- Messages: one notification per chat, stacking its messages with each sender's photo, plus **Reply** and **Mark as read** buttons that work without opening the app (a reply written offline is sent once the phone is back online). A notification goes away when you read the chat, here or on another phone.
+- Calls ring with the phone's ringtone (or vibrate, following the ringer switch) even when the app is closed, and pop up with **Answer** / **Decline**; over the lock screen they open the call screen. Missed calls show a "Missed call" notification, appear in the chat and in the **Calls** list (phone icon at the top of the chat list).
+- The native parts are in `android/app/src/main/java/com/jujatech/chatapp/` (`ChatMessagingService`, `Notifier`, `NotificationActionReceiver`, `NativeSessionPlugin`).
+
 ## iOS (needs a Mac with Xcode)
 
 The `ios/` project is committed with its native code already in place: `OutboxPlugin.swift` (background sending), `DeviceFilesPlugin.swift` (documents in Quick Look) and `MainViewController.swift` (plugin registration). The permission texts (contacts, microphone, camera, photos) are already in `Info.plist`. On a Mac:

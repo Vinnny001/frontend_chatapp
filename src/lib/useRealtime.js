@@ -6,7 +6,8 @@ import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
 import { closeLocalDb, openLocalDb } from './localdb.js';
 import { autoSyncContacts } from './contacts.js';
-import { clearDeliveredNotifications, setupPush } from './push.js';
+import { setupPush } from './push.js';
+import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
 import { useChat } from '../store/chat.js';
@@ -32,14 +33,24 @@ export function useRealtime(token) {
       if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
     });
     requestNotificationPermission();
+    // Android: notification buttons (Reply, Mark as read, Decline) work with the app closed.
+    setNativeSession(token);
+    const openChat = (conversationId) => {
+      const chat = useChat.getState();
+      chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
+    };
+    cleanups.push(
+      onNativeAction(({ action, conversationId, callId }) => {
+        if (action === 'open' && conversationId) openChat(conversationId);
+        // "Answer" on the ringing notification: pick up as soon as the call reaches the app.
+        if (action === 'answer' && callId) useCall.getState().answerWhenReady(callId);
+      })
+    );
     // Phones: Android shows one permission prompt at a time and drops a second request made
     // while one is open, so ask in turn: notifications first, then contacts.
     (async () => {
       // Push notifications for new messages (tap one to open that chat).
-      await setupPush((conversationId) => {
-        const chat = useChat.getState();
-        chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
-      }).catch((err) => console.warn('Push setup failed', err));
+      await setupPush(openChat).catch((err) => console.warn('Push setup failed', err));
       // Contacts: ask once and keep "who's on ChatApp" in sync.
       const state = await autoSyncContacts(userId).catch(() => null);
       if (state === 'limited') {
@@ -126,15 +137,17 @@ export function useRealtime(token) {
         useChat.getState().queueAllInBackground();
       } else {
         onOnline();
-        clearDeliveredNotifications(); // like WhatsApp: opening the app clears its notifications
+        // Notifications stay until their chat is read (like WhatsApp); the open chat is read now.
         useChat.getState().retryPending();
       }
     });
     cleanups.push(() => appHandle.then((h) => h.remove()).catch(() => {}));
 
     const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
       const { activeId, markRead } = useChat.getState();
-      if (document.visibilityState === 'visible' && activeId) markRead(activeId);
+      if (activeId) markRead(activeId);
+      useCall.getState().onAppVisible();
     };
     document.addEventListener('visibilitychange', onVisible);
     cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
@@ -144,6 +157,7 @@ export function useRealtime(token) {
       if (useAuth.getState().token) saveNow();
       else {
         // Signed out: don't leave their chats or media on the device.
+        clearNativeSession();
         clearCache(userId);
         closeLocalDb(userId, { erase: true });
       }

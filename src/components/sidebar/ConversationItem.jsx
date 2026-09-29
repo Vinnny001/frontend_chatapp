@@ -41,7 +41,7 @@ function ConversationItem({ conv, me, active }) {
         : '';
     preview = (
       <>
-        {mine && last.type !== 'system' && <Ticks status={messageStatus(last, conv, me)} size={15} />}
+        {mine && last.type !== 'system' && last.type !== 'call' && <Ticks status={messageStatus(last, conv, me)} size={15} />}
         <span className={last.deletedForEveryone ? 'muted-italic' : ''}>
           {senderName}
           {previewText(last)}

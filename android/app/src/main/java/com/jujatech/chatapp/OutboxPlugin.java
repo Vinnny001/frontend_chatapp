@@ -66,12 +66,17 @@ public class OutboxPlugin extends Plugin {
                     .put("mime", call.getString("mime", "application/octet-stream"))
                     .put("mediaExtra", call.getString("mediaExtra", "{}"));
             }
-            prefs(getContext()).edit().putString(id, job.toString()).apply();
+            schedule(getContext(), id, job);
         } catch (JSONException e) {
             call.reject("Could not store message", e);
             return;
         }
+        call.resolve();
+    }
 
+    /** Stores the job and schedules its delivery (also used by the notification Reply button). */
+    static void schedule(Context context, String id, JSONObject job) {
+        prefs(context).edit().putString(id, job.toString()).apply();
         Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(OutboxWorker.class)
             .setConstraints(constraints)
@@ -84,8 +89,7 @@ public class OutboxPlugin extends Plugin {
             .addTag("outbox")
             .build();
         // KEEP: queuing the same message twice doesn't restart its job.
-        WorkManager.getInstance(getContext()).enqueueUniqueWork(workName(id), ExistingWorkPolicy.KEEP, request);
-        call.resolve();
+        WorkManager.getInstance(context).enqueueUniqueWork(workName(id), ExistingWorkPolicy.KEEP, request);
     }
 
     /** The app sent it itself: drop the job and any copied file. */

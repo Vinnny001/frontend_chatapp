@@ -37,6 +37,8 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // Background sending of messages queued while offline (OutboxPlugin)
     implementation "androidx.work:work-runtime:2.10.5"
+    // WhatsApp-style notifications built from data pushes (ChatMessagingService)
+    implementation "com.google.firebase:firebase-messaging:25.0.1"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

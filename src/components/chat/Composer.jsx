@@ -279,7 +279,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
               onChange={(e) => updateText(e.target.value)}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
-              maxLength={10000}
+              maxLength={65536}
               aria-label="Message"
             />
           </>

@@ -3,7 +3,7 @@ import { ChevronsDown, Timer } from 'lucide-react';
 import MessageBubble from './MessageBubble.jsx';
 import { formatDayLabel, sameDay } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
-import { useChat } from '../../store/chat.js';
+import { isCallMessage, useChat } from '../../store/chat.js';
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const NEAR_BOTTOM_PX = 160;
@@ -19,15 +19,22 @@ export default function MessageList({ conv }) {
   const [showJump, setShowJump] = useState(false);
   const [flashId, setFlashId] = useState(null);
 
-  // Where the "unread messages" divider goes: captured once, when the chat is opened.
-  const [unread] = useState(() => {
-    const mine = conv.participants.find((p) => p.id === me);
-    return conv.me?.unreadCount > 0 && mine ? { from: Date.parse(mine.lastReadAt), count: conv.me.unreadCount } : null;
-  });
+  // The "N unread messages" line: where the chat was when it was opened (see openConversation).
+  const marker = useChat((s) => s.unreadMarker);
+  const unread = marker?.convId === conv.id ? marker : null;
 
   const items = thread?.items || [];
   const firstUnreadId = useMemo(
-    () => (unread ? items.find((m) => m.sender !== me && m.type !== 'system' && Date.parse(m.createdAt) > unread.from)?.id : null),
+    () =>
+      unread
+        ? items.find(
+            (m) =>
+              m.sender !== me &&
+              m.type !== 'system' &&
+              !(isCallMessage(m) && m.call.status !== 'missed') &&
+              Date.parse(m.createdAt) > unread.from
+          )?.id
+        : null,
     [items, unread, me]
   );
 
@@ -89,6 +96,7 @@ export default function MessageList({ conv }) {
             prev &&
             prev.sender === m.sender &&
             prev.type !== 'system' &&
+            prev.type !== 'call' &&
             Date.parse(m.createdAt) - Date.parse(prev.createdAt) < GROUP_WINDOW_MS;
           return (
             <Fragment key={m.clientId || m.id}>

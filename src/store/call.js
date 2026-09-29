@@ -3,6 +3,7 @@ import { ICE_SERVERS } from '../lib/config.js';
 import { emitAck } from '../lib/socket.js';
 import { uid } from '../lib/format.js';
 import { startRingtone, stopRingtone } from '../lib/notify.js';
+import { clearCallNotification, isNativeApp } from '../lib/native.js';
 import { toast } from './ui.js';
 
 // One active 1:1 call at a time. Media is peer-to-peer (WebRTC); the realtime service only
@@ -13,6 +14,7 @@ const RING_TIMEOUT_MS = 45_000;
 let pc = null;
 let pendingCandidates = [];
 let ringTimeout = null;
+let pendingAnswer = null; // { callId, until }: answered from the notification before the call arrived
 
 async function getMedia(kind, facingMode = 'user') {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls are not supported on this device');
@@ -54,6 +56,7 @@ function cleanup() {
   clearTimeout(ringTimeout);
   stopRingtone();
   const { call } = useCall.getState();
+  clearCallNotification(call?.id);
   call?.localStream?.getTracks().forEach((t) => t.stop());
   pc?.close();
   pc = null;
@@ -89,6 +92,7 @@ export const useCall = create((set, get) => ({
     const { call } = get();
     if (!call || call.direction !== 'incoming') return;
     stopRingtone();
+    clearCallNotification(call.id);
     try {
       const localStream = await getMedia(call.kind);
       get().patch({ localStream, state: 'connecting' });
@@ -162,15 +166,36 @@ export const useCall = create((set, get) => ({
   // ------------------------------------------------------------ socket events
 
   onIncoming({ callId, conversationId, kind, from }) {
-    if (get().call) {
+    const { call } = get();
+    if (call?.id === callId) return; // the same call, re-sent when the app reconnected
+    if (call) {
       emitAck('call:reject', { callId, reason: 'busy' }).catch(() => {});
       return;
     }
     set({
       call: { id: callId, conversationId, peer: from, kind, direction: 'incoming', state: 'ringing', muted: false, cameraOff: false, facingMode: 'user' },
     });
-    startRingtone();
     ringTimeout = setTimeout(() => get().call?.state === 'ringing' && get().finish('Missed call'), RING_TIMEOUT_MS);
+    if (pendingAnswer?.callId === callId && pendingAnswer.until > Date.now()) {
+      pendingAnswer = null;
+      get().acceptCall(); // "Answer" was tapped on the notification
+      return;
+    }
+    // In the background the phone's own ringing notification rings instead.
+    if (!(isNativeApp() && document.visibilityState !== 'visible')) startRingtone();
+  },
+
+  /** "Answer" tapped on the ringing notification: accept now, or once the call reaches the app. */
+  answerWhenReady(callId) {
+    const { call } = get();
+    if (call?.id === callId && call.direction === 'incoming' && call.state === 'ringing') return get().acceptCall();
+    pendingAnswer = { callId, until: Date.now() + RING_TIMEOUT_MS };
+  },
+
+  /** Back on screen while a call is ringing: ring in the app (the notification was removed). */
+  onAppVisible() {
+    const { call } = get();
+    if (call?.direction === 'incoming' && call.state === 'ringing') startRingtone();
   },
 
   async onAccepted({ callId }) {
@@ -185,11 +210,14 @@ export const useCall = create((set, get) => ({
   },
 
   onRejected({ callId, reason }) {
-    if (get().call?.id === callId) get().finish(reason === 'busy' ? 'User is busy' : 'Call declined');
+    if (get().call?.id !== callId) return;
+    get().finish({ busy: 'User is busy', 'no-answer': 'No answer' }[reason] || 'Call declined');
   },
 
-  onEnded({ callId }) {
-    if (get().call?.id === callId) get().finish('Call ended');
+  onEnded({ callId, reason }) {
+    const { call } = get();
+    if (call?.id !== callId) return;
+    get().finish(reason === 'missed' || call.state === 'ringing' ? 'Missed call' : 'Call ended');
   },
 
   onHandledElsewhere({ callId }) {

@@ -779,3 +779,52 @@ button.doc-row {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---------- calls ---------- */
+.call-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.call-row:hover {
+  background: var(--hover);
+}
+
+.call-row-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.call-row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-row-name.missed {
+  color: var(--danger);
+}
+
+.call-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.call-row-meta .ok {
+  color: var(--accent);
+}
+
+.call-row-meta .missed {
+  color: var(--danger);
+}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Archive, LogOut, MessageSquarePlus, MoreVertical, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, LogOut, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import CallsPanel from './CallsPanel.jsx';
 import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
 import ConversationItem from './ConversationItem.jsx';
@@ -18,7 +19,7 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ];
 
-const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel };
+const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel };
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);
@@ -69,8 +70,8 @@ export default function Sidebar() {
             <span className={`conn conn-${connection}`}>{connection === 'offline' ? 'Offline – waiting for network' : 'Connecting…'}</span>
           )}
         </div>
-        <button className="icon-btn" onClick={() => openPanel('starred')} aria-label="Starred messages" title="Starred messages">
-          <Star size={20} />
+        <button className="icon-btn" onClick={() => openPanel('calls')} aria-label="Calls" title="Calls">
+          <Phone size={20} />
         </button>
         <button className="icon-btn" onClick={() => openPanel('newChat')} aria-label="New chat" title="New chat">
           <MessageSquarePlus size={20} />
@@ -141,6 +142,7 @@ export default function Sidebar() {
           onClose={() => setMenu(null)}
           items={[
             { label: 'New group', icon: Users, onClick: () => openPanel('newGroup') },
+            { label: 'Calls', icon: Phone, onClick: () => openPanel('calls') },
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
             { label: 'Log out', icon: LogOut, danger: true, onClick: logout },
