@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, LogOut, Pencil } from 'lucide-react';
 import SidePanel from './SidePanel.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import { api } from '../../lib/api.js';
+import { formatBytes } from '../../lib/format.js';
+import { clearDownloadedMedia, mediaUsage } from '../../lib/localdb.js';
 import { requestNotificationPermission } from '../../lib/notify.js';
 import { useAuth } from '../../store/auth.js';
-import { WALLPAPERS, toast, useUI } from '../../store/ui.js';
+import { MEDIA_KINDS, WALLPAPERS, toast, useUI } from '../../store/ui.js';
 
 function EditableField({ label, value, maxLength, onSave }) {
   const [editing, setEditing] = useState(false);
@@ -64,11 +66,68 @@ function Toggle({ label, hint, checked, onChange }) {
   );
 }
 
+/** One auto-download rule: which kinds of media download automatically on this connection. */
+function AutoDownloadRow({ label, kinds, onChange }) {
+  const toggle = (id) => onChange(kinds.includes(id) ? kinds.filter((k) => k !== id) : [...kinds, id]);
+  const summary = kinds.length ? MEDIA_KINDS.filter((k) => kinds.includes(k.id)).map((k) => k.label).join(', ') : 'No media';
+  return (
+    <div className="auto-download">
+      <span className="auto-download-label">
+        {label}
+        <small>{summary}</small>
+      </span>
+      <div className="auto-download-kinds">
+        {MEDIA_KINDS.map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            className={`chip ${kinds.includes(k.id) ? 'active' : ''}`}
+            aria-pressed={kinds.includes(k.id)}
+            onClick={() => toggle(k.id)}
+          >
+            {k.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Space used by downloaded media, with a button to free it. */
+function StorageRow() {
+  const [usage, setUsage] = useState(null);
+  const refresh = () => mediaUsage().then(setUsage).catch(() => setUsage({ bytes: 0, files: 0 }));
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function clear() {
+    if (!window.confirm('Remove downloaded photos, videos, voice notes and documents from this device? Messages stay, and media downloads again when you open it online.')) return;
+    await clearDownloadedMedia();
+    refresh();
+    toast('Downloaded media removed');
+  }
+
+  return (
+    <div className="settings-group">
+      <div className="editable">
+        <span className="editable-label">Downloaded media on this device</span>
+        <span className="editable-value">
+          {usage ? `${formatBytes(usage.bytes)} · ${usage.files} file${usage.files === 1 ? '' : 's'}` : 'Calculating…'}
+        </span>
+      </div>
+      <button className="btn btn-ghost" onClick={clear} disabled={!usage?.files}>
+        Clear downloaded media
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsPanel() {
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
   const logout = useAuth((s) => s.logout);
-  const { theme, wallpaper, enterToSend, sounds, autoDownload, setPref } = useUI();
+  const { theme, wallpaper, enterToSend, sounds, autoDownloadRules, setPref } = useUI();
 
   async function update(body) {
     try {
@@ -137,12 +196,6 @@ export default function SettingsPanel() {
       <div className="settings-group">
         <Toggle label="Enter key sends message" hint="Shift+Enter adds a new line" checked={enterToSend} onChange={(v) => setPref('enterToSend', v)} />
         <Toggle label="Sounds" checked={sounds} onChange={(v) => setPref('sounds', v)} />
-        <Toggle
-          label="Auto-download media"
-          hint="Save photos, videos and voice notes on this device so they open offline"
-          checked={autoDownload}
-          onChange={(v) => setPref('autoDownload', v)}
-        />
         {notifications === 'default' && (
           <button className="btn btn-ghost" onClick={requestNotificationPermission}>
             Enable desktop notifications
@@ -150,6 +203,27 @@ export default function SettingsPanel() {
         )}
         {notifications === 'denied' && <p className="hint">Notifications are blocked in your browser settings.</p>}
       </div>
+
+      <h3 className="section-label">Media auto-download</h3>
+      <div className="settings-group">
+        <p className="hint">
+          Downloaded media is saved on this device and opens offline. Anything not downloaded automatically is
+          downloaded when you open it, or with “Save chat for offline” in a chat’s info.
+        </p>
+        <AutoDownloadRow
+          label="When using mobile data"
+          kinds={autoDownloadRules.cellular}
+          onChange={(cellular) => setPref('autoDownloadRules', { ...autoDownloadRules, cellular })}
+        />
+        <AutoDownloadRow
+          label="When connected on Wi-Fi"
+          kinds={autoDownloadRules.wifi}
+          onChange={(wifi) => setPref('autoDownloadRules', { ...autoDownloadRules, wifi })}
+        />
+      </div>
+
+      <h3 className="section-label">Storage</h3>
+      <StorageRow />
 
       <button className="btn btn-danger-ghost btn-block logout" onClick={logout}>
         <LogOut size={18} /> Log out

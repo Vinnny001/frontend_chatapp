@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Archive, Bell, BellOff, Check, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
@@ -69,6 +69,44 @@ function MediaGrid({ convId }) {
           <span>{m.media.name}</span>
         </button>
       ))}
+    </section>
+  );
+}
+
+/** Downloads this chat's full history and all its media so everything opens offline. */
+function SaveOffline({ convId }) {
+  const [progress, setProgress] = useState(null);
+  const busy = progress && !progress.done;
+
+  async function save() {
+    setProgress({ messages: 0, files: 0, saved: 0, done: false });
+    try {
+      await useChat.getState().saveChatOffline(convId, setProgress);
+    } catch (e) {
+      setProgress(null);
+      toast(e.status === 0 ? 'Connect to the internet to save this chat for offline.' : e.message, 'error');
+    }
+  }
+
+  let status = 'Download every message, photo, video, voice note and document in this chat to this device.';
+  if (progress && !progress.done) {
+    status =
+      progress.files && progress.saved
+        ? `Downloading files… ${progress.saved} of ${progress.files}`
+        : `Saving messages… ${progress.messages}`;
+  } else if (progress?.done) {
+    status = `Saved: ${progress.messages} messages and ${progress.files} files are available offline.`;
+  }
+
+  return (
+    <section className="info-card">
+      <button className="save-offline" onClick={save} disabled={busy}>
+        <CloudDownload size={20} className={busy ? 'pulse' : ''} />
+        <span>
+          <strong>{busy ? 'Saving chat for offline…' : 'Save chat for offline'}</strong>
+          <small>{status}</small>
+        </span>
+      </button>
     </section>
   );
 }
@@ -309,6 +347,8 @@ function InfoContent({ conv }) {
       )}
 
       <MediaGrid convId={conv.id} />
+
+      <SaveOffline convId={conv.id} />
 
       <section className="info-card">
         <label className="toggle-row">

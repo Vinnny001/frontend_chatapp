@@ -735,3 +735,47 @@ button.doc-row {
   text-align: left;
   font: inherit;
 }
+
+.save-offline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  color: var(--accent);
+}
+
+.save-offline span {
+  display: grid;
+  gap: 2px;
+}
+
+.save-offline strong {
+  font-weight: 500;
+}
+
+.save-offline small {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.auto-download {
+  display: grid;
+  gap: 8px;
+  padding: 10px 6px;
+}
+
+.auto-download-label {
+  display: grid;
+}
+
+.auto-download-label small {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.auto-download-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

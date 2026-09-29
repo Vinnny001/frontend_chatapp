@@ -9,6 +9,20 @@ export const WALLPAPERS = [
   { id: 'plain', label: 'Plain' },
 ];
 
+export const MEDIA_KINDS = [
+  { id: 'image', label: 'Photos' },
+  { id: 'audio', label: 'Audio' },
+  { id: 'video', label: 'Videos' },
+  { id: 'file', label: 'Documents' },
+];
+
+// Same defaults as WhatsApp: photos + audio on mobile data, everything on Wi-Fi.
+// (An old "auto-download off" setting from the previous version carries over as "nothing".)
+const DEFAULT_AUTO_DOWNLOAD =
+  storage.get('ui.autoDownload', true) === false
+    ? { cellular: [], wifi: [] }
+    : { cellular: ['image', 'audio'], wifi: ['image', 'audio', 'video', 'file'] };
+
 let toastId = 0;
 
 export const useUI = create((set, get) => ({
@@ -16,8 +30,8 @@ export const useUI = create((set, get) => ({
   wallpaper: storage.get('ui.wallpaper', 'doodle'),
   enterToSend: storage.get('ui.enterToSend', true),
   sounds: storage.get('ui.sounds', true),
-  // Download photos, videos and voice notes as they arrive so they're available offline.
-  autoDownload: storage.get('ui.autoDownload', true),
+  // Which media downloads automatically (so it's available offline), per connection type.
+  autoDownloadRules: storage.get('ui.autoDownloadRules', DEFAULT_AUTO_DOWNLOAD),
   // Sidebar overlay panels: newChat | newGroup | settings | starred | profile
   panel: null,
   infoOpen: false,

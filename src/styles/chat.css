@@ -1131,3 +1131,16 @@ button.file-card {
   font: inherit;
   cursor: pointer;
 }
+
+.media-download {
+  border: 0;
+  cursor: pointer;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.media-download:disabled {
+  cursor: default;
+  opacity: 1;
+}

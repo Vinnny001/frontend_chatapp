@@ -2,10 +2,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { mediaUrl } from './config.js';
 import { ensureMedia } from './media.js';
 
-// Android: files in the app's private native storage (DeviceFilesPlugin.java). Used to hand
-// documents to other apps (PDF/Word viewers) and media to the background sender.
+// Android/iOS: files in the app's private native storage (DeviceFilesPlugin.java / .swift).
+// Used to open documents in the phone's viewer (Android apps / iOS Quick Look) and to hand
+// media to the background sender.
 const DeviceFiles = registerPlugin('DeviceFiles');
-export const nativeFilesSupported = () => Capacitor.getPlatform() === 'android';
+export const nativeFilesSupported = () => ['android', 'ios'].includes(Capacitor.getPlatform());
 
 const CHUNK_BYTES = 512 * 1024;
 

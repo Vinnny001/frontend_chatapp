@@ -122,6 +122,31 @@ export async function putStoredMedia(url, blob) {
   evictMedia();
 }
 
+/** Bytes used by downloaded media (files still waiting to be sent aren't counted). */
+export async function mediaUsage() {
+  const d = await db();
+  if (!d) return { bytes: 0, files: 0 };
+  let bytes = 0;
+  let files = 0;
+  for (let c = await d.transaction('media').store.openCursor(); c; c = await c.continue()) {
+    if (String(c.key).startsWith('pending:')) continue;
+    bytes += c.value.size || 0;
+    files += 1;
+  }
+  return { bytes, files };
+}
+
+/** Frees space: removes downloaded media, but never files that are still waiting to be sent. */
+export async function clearDownloadedMedia() {
+  const d = await db();
+  if (!d) return;
+  const tx = d.transaction('media', 'readwrite');
+  for (let c = await tx.store.openCursor(); c; c = await c.continue()) {
+    if (!String(c.key).startsWith('pending:')) c.delete();
+  }
+  await tx.done.catch(() => {});
+}
+
 let evicting = false;
 async function evictMedia() {
   if (evicting) return;

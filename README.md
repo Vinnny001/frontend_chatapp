@@ -32,21 +32,25 @@ The `android/` project is committed, and its microphone, camera and contacts per
 
 ## Offline, contacts and phone numbers
 
-- **Offline history:** every message the app has seen is kept on the device (IndexedDB), together with the photos, videos, voice notes, files and profile pictures in them. Without a connection you can open any chat and scroll back through old messages and media, however long ago they were sent. Media downloads automatically as it arrives; *Settings → Auto-download media* turns this off. When stored media passes 1 GB, the files viewed least recently are removed first. Everything is erased from the device on sign-out.
+- **Offline history:** every message the app has seen is kept on the device (IndexedDB), together with downloaded photos, videos, voice notes, documents and profile pictures. Without a connection you can open any chat and scroll back through old messages and media. When stored media passes 1 GB, the files viewed least recently are removed first. Everything is erased from the device on sign-out.
+- **Media auto-download (Settings):** like WhatsApp, you choose which media downloads automatically *on mobile data* and *on Wi-Fi*: Photos, Audio, Videos, Documents. The default is photos and audio on mobile data, everything on Wi-Fi. Media that isn't auto-downloaded shows a *Download · size* button, and documents download when opened. Settings also shows how much space downloaded media uses, with a *Clear downloaded media* button.
+- **Save chat for offline (chat info):** downloads a chat's entire history and every photo, video, voice note and document in it, including old ones never opened on this device.
 - **Sending offline:** text, photos, videos and voice notes written offline show a clock. They are kept on the device, even if the app is closed, and sent automatically when the connection returns. The server never stores the same message twice.
-- **Sending with the app closed (Android):** queued messages, including photos, videos and voice notes, are handed to Android's WorkManager (`android/app/src/main/java/com/jujatech/chatapp/OutboxPlugin.java`, `OutboxWorker.java`). It uploads the file and sends the message as soon as the phone is online again, even if the app has been closed. Media files are copied into the app's private storage for this (`DeviceFilesPlugin.java`) and deleted once sent. When the app next opens, even offline, it shows those messages as sent and never uploads them twice. Android decides exactly when background work runs, typically within seconds to a couple of minutes of the network returning.
+- **Sending with the app closed (Android and iOS):** queued messages, including photos, videos and voice notes, are handed to Android's WorkManager (`android/app/src/main/java/com/jujatech/chatapp/OutboxPlugin.java`, `OutboxWorker.java`). It uploads the file and sends the message as soon as the phone is online again, even if the app has been closed. Media files are copied into the app's private storage for this (`DeviceFilesPlugin.java`) and deleted once sent. When the app next opens, even offline, it shows those messages as sent and never uploads them twice. Android decides exactly when background work runs, typically within seconds to a couple of minutes of the network returning. On iOS the same happens through background upload transfers (`ios/App/App/OutboxPlugin.swift`): iOS completes them when the network returns, even if the app was suspended or closed by the system. The one exception is an app the user force-quits from the app switcher; iOS cancels its transfers, and those messages are sent the next time the app opens (WhatsApp has the same limitation).
 - **Contacts:** right after sign-in the app asks for contacts access (read and write, the full Android permission), then shows under *New chat* which contacts are on ChatApp and lets you invite the rest by SMS. It re-syncs in the background at most every 12 hours. If a user denied access, *New chat → Find friends from contacts* asks again. On iOS 18+, users who grant only some contacts are told how to allow full access. On the web there is an *Invite a friend* share button instead. Set `VITE_INVITE_URL` to the link invites should contain.
-- **Documents** (PDF, Word, Excel, …) are saved on the phone like other media. Tapping one opens it in the phone's own viewer app, offline too, just like WhatsApp. On the web it downloads or opens in a new tab.
+- **Documents** (PDF, Word, Excel, …) are saved on the phone like other media. Tapping one opens it offline too, just like WhatsApp: in the phone's own viewer app on Android, and in Quick Look on iPhone (which also offers *Open in…* other apps). On the web it downloads or opens in a new tab.
 - **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
 ## iOS (needs a Mac with Xcode)
 
+The `ios/` project is committed with its native code already in place: `OutboxPlugin.swift` (background sending), `DeviceFilesPlugin.swift` (documents in Quick Look) and `MainViewController.swift` (plugin registration). The permission texts (contacts, microphone, camera, photos) are already in `Info.plist`. On a Mac:
+
 ```bash
-npx cap add ios
-npm run cap:ios
+npm install
+npm run cap:ios           # builds, syncs and opens Xcode
 ```
 
-Add `NSMicrophoneUsageDescription`, `NSCameraUsageDescription` and `NSContactsUsageDescription` to `ios/App/App/Info.plist`, choose your signing team, then Run.
+In Xcode, choose your signing team (*Signing & Capabilities*) and press ▶ Run. Add `GoogleService-Info.plist` from Firebase once iOS push notifications are set up.
 
 ## Production
 

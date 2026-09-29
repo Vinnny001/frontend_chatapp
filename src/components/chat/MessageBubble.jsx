@@ -2,6 +2,7 @@ import { memo, useRef, useState } from 'react';
 import {
   Ban,
   ChevronDown,
+  CloudDownload,
   CloudOff,
   Copy,
   Download,
@@ -24,7 +25,8 @@ import EmojiPicker from './EmojiPicker.jsx';
 import MessageInfo from './MessageInfo.jsx';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
-import { useMediaSrc } from '../../lib/media.js';
+import { mediaKind, useMediaSrc } from '../../lib/media.js';
+import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
 import { messageStatus, useChat } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -91,15 +93,55 @@ function MissingMedia({ type }) {
   );
 }
 
-function Media({ msg }) {
-  const openViewer = useUI((s) => s.openViewer);
-  const { media } = msg;
-  // The stored copy when available (works offline), otherwise the network URL.
-  const { src, missing } = useMediaSrc(media.url);
-  const uploading = msg.pending && msg.progress != null && msg.progress < 1 && msg.status !== 'failed';
+/** Media not covered by the auto-download rules: tap to download (shows the size). */
+function DownloadPrompt({ type, size, downloading, onDownload }) {
+  const label = { image: 'Photo', video: 'Video', voice: 'Voice message', audio: 'Audio' }[type] || 'File';
+  return (
+    <button
+      type="button"
+      className={`media-missing media-download ${type}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onDownload();
+      }}
+      disabled={downloading}
+    >
+      <CloudDownload size={24} className={downloading ? 'pulse' : ''} />
+      <span>
+        {downloading ? 'Downloading…' : `Download ${label.toLowerCase()}`}
+        {size ? ` · ${formatBytes(size)}` : ''}
+      </span>
+    </button>
+  );
+}
 
-  if (missing && msg.type !== 'file') return <MissingMedia type={msg.type} />;
-  if (!src && msg.type !== 'file') return <div className={`media-loading ${msg.type}`} />;
+function Media({ msg }) {
+  const uploading = msg.pending && msg.progress != null && msg.progress < 1 && msg.status !== 'failed';
+  // Documents download only when opened (or by auto-download / "Save chat for offline").
+  if (msg.type === 'file') return <DocumentCard media={msg.media} uploadingProgress={uploading ? msg.progress : null} />;
+  return <VisualMedia msg={msg} uploading={uploading} />;
+}
+
+function VisualMedia({ msg, uploading }) {
+  const openViewer = useUI((s) => s.openViewer);
+  const rules = useUI((s) => s.autoDownloadRules);
+  const { media } = msg;
+  // Stored copy when available (works offline); otherwise follow the auto-download rules.
+  const auto = (rules[connectionKind()] || []).includes(mediaKind(msg.type));
+  const { src, missing, needsDownload, downloading, download } = useMediaSrc(media.url, { auto });
+
+  if (missing) return <MissingMedia type={msg.type} />;
+  if (needsDownload) {
+    return (
+      <DownloadPrompt
+        type={msg.type}
+        size={media.size}
+        downloading={downloading}
+        onDownload={() => download().then((ok) => ok || toast('Download failed. Check your connection.', 'error'))}
+      />
+    );
+  }
+  if (!src) return <div className={`media-loading ${msg.type}`} />;
 
   if (msg.type === 'image') {
     return (
@@ -121,8 +163,7 @@ function Media({ msg }) {
     );
   }
   if (msg.type === 'voice') return <VoicePlayer src={src} duration={media.duration} progress={uploading ? msg.progress : null} />;
-  if (msg.type === 'audio') return <audio className="audio-player" src={src} controls preload="metadata" />;
-  return <DocumentCard media={media} uploadingProgress={uploading ? msg.progress : null} />;
+  return <audio className="audio-player" src={src} controls preload="metadata" />;
 }
 
 /** Tap to open in the phone's document app, from the saved copy (works offline). */

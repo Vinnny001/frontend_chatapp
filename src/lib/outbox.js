@@ -2,13 +2,13 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { API_URL } from './config.js';
 import { writeNativeFile } from './deviceFiles.js';
 
-// Android only: a native WorkManager job (android/.../OutboxPlugin.java) that delivers a
-// queued message as soon as the phone is back online, even if the app has been closed.
-// Photos, videos and voice notes are copied into native storage so the job can upload them
-// itself. The server dedupes by clientId, so it is harmless if the app also sends the same
-// message itself.
+// Native background sender that delivers a queued message as soon as the phone is back
+// online, even if the app has been closed: Android WorkManager (OutboxPlugin.java) and iOS
+// background URLSession transfers (OutboxPlugin.swift). Photos, videos and voice notes are
+// copied into native storage so it can upload them itself. The server dedupes by clientId,
+// so it is harmless if the app also sends the same message itself.
 const Outbox = registerPlugin('Outbox');
-const supported = () => Capacitor.getPlatform() === 'android';
+const supported = () => ['android', 'ios'].includes(Capacitor.getPlatform());
 
 // Files already copied for the background sender in this session (copying is the slow part).
 const copied = new Set();

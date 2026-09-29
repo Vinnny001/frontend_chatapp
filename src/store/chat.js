@@ -13,7 +13,8 @@ import {
   readMessages,
   saveMessages,
 } from '../lib/localdb.js';
-import { mediaUrlsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
+import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
+import { connectionKind } from '../lib/network.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { useAuth } from './auth.js';
 import { toast, useUI } from './ui.js';
@@ -40,10 +41,14 @@ const PAGE = 40;
 /** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
 const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
 
-/** Keep messages on the device and (if enabled) download their media for offline viewing. */
+/**
+ * Keep messages on the device and download their media for offline viewing, following the
+ * user's auto-download rules for the current connection (mobile data / Wi-Fi).
+ */
 function keepOffline(messages) {
   saveMessages(messages);
-  if (useUI.getState().autoDownload) prefetchMedia(mediaUrlsOf(messages));
+  const allowed = new Set(useUI.getState().autoDownloadRules[connectionKind()] || []);
+  prefetchMedia(mediaItemsOf(messages).filter((item) => allowed.has(item.kind)).map((item) => item.url));
 }
 
 /** Merges message lists by clientId/id. Confirmed messages replace their pending copies. */
@@ -343,6 +348,34 @@ export const useChat = create((set, get) => {
           patchThread(convId, () => ({ loaded: true, loading: false }));
         }
       }
+    },
+
+    /**
+     * 'Save chat for offline': downloads a chat's whole history and every photo, video, voice
+     * note and document in it (an explicit request, so the auto-download rules don't apply).
+     * onProgress({ messages, files, saved, done }).
+     */
+    async saveChatOffline(convId, onProgress) {
+      let before;
+      let count = 0;
+      const urls = new Set();
+      for (;;) {
+        const q = new URLSearchParams({ limit: '100' });
+        if (before) q.set('before', before);
+        const { messages, hasMore } = await api(`/api/conversations/${convId}/messages?${q}`);
+        await saveMessages(messages);
+        for (const item of mediaItemsOf(messages)) urls.add(item.url);
+        count += messages.length;
+        onProgress?.({ messages: count, files: urls.size, saved: 0, done: false });
+        if (!hasMore || !messages.length) break;
+        before = messages[0].createdAt;
+      }
+      let saved = 0;
+      for (const url of urls) {
+        await ensureMedia(url);
+        onProgress?.({ messages: count, files: urls.size, saved: ++saved, done: false });
+      }
+      onProgress?.({ messages: count, files: urls.size, saved, done: true });
     },
 
     /** Loads older pages until the message is present, then asks the list to scroll to it. */
