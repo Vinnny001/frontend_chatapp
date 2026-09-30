@@ -15,6 +15,8 @@ import MediaViewer from './components/common/MediaViewer.jsx';
 import ForwardDialog from './components/chat/ForwardDialog.jsx';
 import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
+import { useCall } from './store/call.js';
+import { nativeCallScreenShown } from './lib/native.js';
 
 function useTheme() {
   const theme = useUI((s) => s.theme);
@@ -52,11 +54,30 @@ function useBackButton() {
   }, []);
 }
 
+/**
+ * A call answered while the phone is locked: only the call, never the chats (a stranger
+ * holding the phone can't get past it). The native cover is lifted once this is on screen.
+ */
+function LockedCall() {
+  const hasCall = useCall((s) => !!s.call);
+  useEffect(() => {
+    nativeCallScreenShown();
+  }, []);
+  return (
+    <div className="locked-call">
+      {hasCall ? <CallOverlay /> : <p className="locked-call-wait">Connecting call…</p>}
+    </div>
+  );
+}
+
 function Messenger({ token }) {
   useRealtime(token);
   useBackButton();
   const activeId = useChat((s) => s.activeId);
   const infoOpen = useUI((s) => s.infoOpen);
+  const lockedCall = useCall((s) => !!s.external?.locked);
+
+  if (lockedCall) return <LockedCall />;
 
   return (
     <div className={`app ${activeId ? 'has-chat' : ''} ${infoOpen && activeId ? 'has-info' : ''}`}>

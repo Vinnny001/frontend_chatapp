@@ -505,3 +505,19 @@
 .list-empty p {
   margin: 0;
 }
+
+/* A call answered on the lock screen: nothing but the call. */
+.locked-call {
+  position: fixed;
+  inset: 0;
+  background: #0b141a;
+}
+
+.locked-call-wait {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #e9edef;
+  font-size: 18px;
+}

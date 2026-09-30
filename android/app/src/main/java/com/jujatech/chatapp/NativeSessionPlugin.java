@@ -71,6 +71,33 @@ public class NativeSessionPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Ring for an incoming call while the app is on screen (follows ring / vibrate / silent). */
+    @PluginMethod
+    public void startRinging(PluginCall call) {
+        Ringer.start(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopRinging(PluginCall call) {
+        Ringer.stop();
+        call.resolve();
+    }
+
+    /** The web app shows only the call screen now (a call answered while the phone is locked). */
+    @PluginMethod
+    public void callScreenShown(PluginCall call) {
+        if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).callScreenShown();
+        call.resolve();
+    }
+
+    /** A call answered from outside the app ended: go back to where the phone was. */
+    @PluginMethod
+    public void leaveCall(PluginCall call) {
+        if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).leaveCall();
+        call.resolve();
+    }
+
     @PluginMethod
     public void clearCall(PluginCall call) {
         Notifier.cancelCall(getContext(), call.getString("callId"));

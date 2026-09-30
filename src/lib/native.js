@@ -33,6 +33,16 @@ export function clearChatNotifications(conversationId) {
   if (available() && conversationId) quiet(NativeSession.clearConversation({ conversationId }));
 }
 
+/** Ring with the phone's ringtone / vibration, following its ring mode (app on screen). */
+export const startNativeRinging = () => available() && quiet(NativeSession.startRinging());
+export const stopNativeRinging = () => available() && quiet(NativeSession.stopRinging());
+
+/** A call answered on the lock screen: the call-only screen is up, uncover it. */
+export const nativeCallScreenShown = () => available() && quiet(NativeSession.callScreenShown());
+
+/** A call answered from outside the app ended: back to the lock screen / previous app. */
+export const leaveNativeCall = () => available() && quiet(NativeSession.leaveCall());
+
 /** Stops the ringing notification of a call that was answered or declined in the app. */
 export function clearCallNotification(callId) {
   if (available() && callId) quiet(NativeSession.clearCall({ callId }));

@@ -51,7 +51,8 @@ The `android/` project is committed, and its microphone, camera and contacts per
 ## Notifications and calls (Android)
 
 - Messages: one notification per chat, stacking its messages with each sender's photo, plus **Reply** and **Mark as read** buttons that work without opening the app (a reply written offline is sent once the phone is back online). A notification goes away when you read the chat, here or on another phone.
-- Calls ring with the phone's ringtone (or vibrate, following the ringer switch) even when the app is closed, and pop up with **Answer** / **Decline**; over the lock screen they open the call screen. Missed calls show a "Missed call" notification, appear in the chat and in the **Calls** list (phone icon at the top of the chat list).
+- Calls ring with the phone's own ringtone, following the ring / vibrate / silent setting, whether ChatApp is open, closed or the phone is locked, and pop up with **Answer** / **Decline**.
+- On a locked phone a full-screen incoming-call screen appears without opening the app. Declining (or a missed call) leaves the phone on the lock screen; answering shows only the call over the lock screen, never the chats, and when the call ends the phone goes back to where it was. Missed calls show a "Missed call" notification, appear in the chat and in the **Calls** list (phone icon at the top of the chat list).
 - The native parts are in `android/app/src/main/java/com/jujatech/chatapp/` (`ChatMessagingService`, `Notifier`, `NotificationActionReceiver`, `NativeSessionPlugin`).
 
 ## iOS (needs a Mac with Xcode)

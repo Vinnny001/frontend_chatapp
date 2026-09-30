@@ -21,6 +21,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Full-screen incoming call over the lock screen. Its own task, so closing it goes back
+             to wherever the phone was, and it never exposes the chats. -->
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.jujatech.chatapp.incomingcall"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

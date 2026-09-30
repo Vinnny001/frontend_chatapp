@@ -3,7 +3,7 @@ import { ICE_SERVERS } from '../lib/config.js';
 import { emitAck } from '../lib/socket.js';
 import { uid } from '../lib/format.js';
 import { startRingtone, stopRingtone } from '../lib/notify.js';
-import { clearCallNotification, isNativeApp } from '../lib/native.js';
+import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/native.js';
 import { displayName } from './people.js';
 import { toast } from './ui.js';
 
@@ -16,6 +16,7 @@ let pc = null;
 let pendingCandidates = [];
 let ringTimeout = null;
 let pendingAnswer = null; // { callId, until }: answered from the notification before the call arrived
+let externalTimer = null;
 
 async function getMedia(kind, facingMode = 'user') {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls are not supported on this device');
@@ -66,6 +67,10 @@ function cleanup() {
 
 export const useCall = create((set, get) => ({
   call: null,
+  // A call answered from outside the app (notification / incoming-call screen):
+  // { callId, locked }. While locked, only the call is shown; when it ends, the phone goes back
+  // to where it was (the lock screen, or the app that was in use).
+  external: null,
   // { id, conversationId, peer: {id,name,avatarUrl}, kind, direction, state, startedAt,
   //   localStream, remoteStream, muted, cameraOff, facingMode, reachable, endReason }
 
@@ -125,7 +130,20 @@ export const useCall = create((set, get) => ({
     const id = get().call?.id;
     cleanup();
     get().patch({ state: 'ended', endReason: reason, localStream: null, remoteStream: null });
-    setTimeout(() => get().call?.id === id && set({ call: null }), 1800);
+    setTimeout(() => {
+      if (get().call?.id !== id) return;
+      set({ call: null });
+      get().endExternal(id);
+    }, 1800);
+  },
+
+  /** The call answered from outside the app is over: leave the app as it was before. */
+  endExternal(callId) {
+    const { external } = get();
+    if (!external || (callId && external.callId !== callId)) return;
+    clearTimeout(externalTimer);
+    set({ external: null });
+    leaveNativeCall();
   },
 
   toggleMute() {
@@ -188,7 +206,13 @@ export const useCall = create((set, get) => ({
   },
 
   /** "Answer" tapped on the ringing notification: accept now, or once the call reaches the app. */
-  answerWhenReady(callId) {
+  answerWhenReady(callId, { locked = false, returnAfter = false } = {}) {
+    if (returnAfter) {
+      set({ external: { callId, locked } });
+      clearTimeout(externalTimer);
+      // The call ended before it reached the app: go back without showing anything.
+      externalTimer = setTimeout(() => get().call?.id !== callId && get().endExternal(callId), 30_000);
+    }
     const { call } = get();
     if (call?.id === callId && call.direction === 'incoming' && call.state === 'ringing') return get().acceptCall();
     pendingAnswer = { callId, until: Date.now() + RING_TIMEOUT_MS };
@@ -226,6 +250,7 @@ export const useCall = create((set, get) => ({
     if (get().call?.id === callId) {
       cleanup();
       set({ call: null });
+      get().endExternal(callId);
     }
   },
 

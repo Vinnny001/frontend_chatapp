@@ -1,3 +1,5 @@
+import { isNativeApp, startNativeRinging, stopNativeRinging } from './native.js';
+
 let audioCtx = null;
 
 function ctx() {
@@ -33,6 +35,8 @@ export const playSent = () => tone([660], { duration: 0.08, volume: 0.04 });
 let ringTimer = null;
 export function startRingtone() {
   stopRingtone();
+  // Phones: the real ringtone / vibration, following the ring mode (ring, vibrate, silent).
+  if (isNativeApp()) return startNativeRinging();
   const ring = () => tone([740, 988, 740, 988], { duration: 0.18, gap: 0.04, volume: 0.1 });
   ring();
   ringTimer = setInterval(ring, 2200);
@@ -40,6 +44,7 @@ export function startRingtone() {
 export function stopRingtone() {
   clearInterval(ringTimer);
   ringTimer = null;
+  stopNativeRinging();
 }
 
 export function requestNotificationPermission() {

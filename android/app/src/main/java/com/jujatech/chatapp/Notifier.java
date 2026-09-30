@@ -357,8 +357,17 @@ final class Notifier {
 
         PendingIntent answer = activity(context, "answer", conversationId, callId, d.get("kind"));
         PendingIntent decline = broadcast(context, NotificationActionReceiver.DECLINE, conversationId, callId, false);
-        // Screen off/locked: opens ChatApp's call screen straight away. In use: pops up with the buttons.
-        PendingIntent ring = activity(context, "ring", conversationId, callId, d.get("kind"));
+        // Screen off/locked: the full-screen incoming-call screen (not the app, so the chats stay
+        // private). Phone in use: pops up with the buttons; tapping it opens the same screen.
+        Intent screen = new Intent(context, IncomingCallActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+            .putExtra("callId", callId)
+            .putExtra("conversationId", conversationId)
+            .putExtra("kind", d.get("kind"))
+            .putExtra("callerName", name)
+            .putExtra("callerAvatar", d.get("callerAvatar"));
+        PendingIntent ring = PendingIntent.getActivity(context, ("screen:" + callId).hashCode(), screen,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_CALLS)
             .setSmallIcon(R.drawable.ic_stat_chat)
@@ -385,7 +394,9 @@ final class Notifier {
     }
 
     static void cancelCall(Context context, String callId) {
-        if (callId != null) NotificationManagerCompat.from(context).cancel(TAG_CALL + callId, ID);
+        if (callId == null) return;
+        NotificationManagerCompat.from(context).cancel(TAG_CALL + callId, ID);
+        IncomingCallActivity.dismiss(callId);
     }
 
     /** ChatApp came on screen: its own call screen takes over from the ringing notification. */
@@ -394,6 +405,7 @@ final class Notifier {
         for (StatusBarNotification n : system.getActiveNotifications()) {
             if (n.getTag() != null && n.getTag().startsWith(TAG_CALL)) system.cancel(n.getTag(), n.getId());
         }
+        IncomingCallActivity.dismiss(null);
     }
 
     private static SharedPreferences missed(Context context) {
@@ -463,7 +475,7 @@ final class Notifier {
     }
 
     /** Round profile photo (downloaded once, then cached), or a coloured initial like WhatsApp. */
-    private static Bitmap avatar(Context context, String url, String name) {
+    static Bitmap avatar(Context context, String url, String name) {
         String absolute = Session.absolute(context, url);
         Bitmap photo = absolute == null ? null : download(context, absolute);
         return photo != null ? circle(photo) : initials(name);
@@ -518,7 +530,9 @@ final class Notifier {
     private static final int[] COLORS = { 0xFF0B8F6A, 0xFF3B82F6, 0xFF8B5CF6, 0xFFEC4899, 0xFFF59E0B, 0xFF14B8A6, 0xFFEF4444 };
 
     private static Bitmap initials(String name) {
-        String label = name == null || name.trim().isEmpty() ? "?" : name.trim().substring(0, 1).toUpperCase();
+        // "@alice" -> "A", "+2547..." -> "2": the first letter or digit.
+        String clean = name == null ? "" : name.replaceAll("[@+#()\\s-]", "");
+        String label = clean.isEmpty() ? "?" : clean.substring(0, 1).toUpperCase();
         int size = 192;
         Bitmap output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(output);

@@ -44,10 +44,10 @@ export function useRealtime(token) {
       chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
     };
     cleanups.push(
-      onNativeAction(({ action, conversationId, callId }) => {
+      onNativeAction(({ action, conversationId, callId, locked, returnAfter }) => {
         if (action === 'open' && conversationId) openChat(conversationId);
         // "Answer" on the ringing notification: pick up as soon as the call reaches the app.
-        if (action === 'answer' && callId) useCall.getState().answerWhenReady(callId);
+        if (action === 'answer' && callId) useCall.getState().answerWhenReady(callId, { locked, returnAfter });
       })
     );
     // Phones: Android shows one permission prompt at a time and drops a second request made
