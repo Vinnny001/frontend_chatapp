@@ -61,7 +61,7 @@ export default function NewGroupPanel() {
         </div>
       )}
       <div className="panel-search">
-        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone or email" />
+        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search @username, phone number or email" />
       </div>
       {people.map((p) => (
         <PersonRow

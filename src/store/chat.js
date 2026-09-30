@@ -16,7 +16,9 @@ import {
 import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
 import { connectionKind } from '../lib/network.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
-import { clearChatNotifications } from '../lib/native.js';
+import { clearChatNotifications, setNativeNames } from '../lib/native.js';
+import { useContactMatches } from '../lib/contacts.js';
+import { displayName, knownPhone, savedNames, usePeople } from './people.js';
 import { useAuth } from './auth.js';
 import { toast, useUI } from './ui.js';
 
@@ -78,6 +80,19 @@ export function replyPreview(m) {
     mediaName: m.media?.name,
     mediaUrl: m.type === 'image' ? m.media?.url : undefined,
     deletedForEveryone: !!m.deletedForEveryone,
+  };
+}
+
+/**
+ * Participants as I see them: `name` is the name shown to me (address book, saved contact,
+ * @username or number; the server never sends other people's registered names) and
+ * `phone` includes numbers I know from my address book.
+ */
+function present(conv) {
+  if (!conv?.participants) return conv;
+  return {
+    ...conv,
+    participants: conv.participants.map((p) => ({ ...p, name: displayName(p), phone: knownPhone(p) || undefined })),
   };
 }
 
@@ -174,7 +189,7 @@ export const useChat = create((set, get) => {
     hydrate(cache) {
       if (!cache?.conversations?.length || get().loaded) return;
       set({
-        conversations: Object.fromEntries(cache.conversations.map((c) => [c.id, c])),
+        conversations: Object.fromEntries(cache.conversations.map((c) => [c.id, present(c)])),
         loaded: true,
         threads: Object.fromEntries(
           Object.entries(cache.threads || {}).map(([id, items]) => [
@@ -190,7 +205,7 @@ export const useChat = create((set, get) => {
 
     async loadConversations() {
       const { conversations } = await api('/api/conversations');
-      set({ conversations: Object.fromEntries(conversations.map((c) => [c.id, c])), loaded: true });
+      set({ conversations: Object.fromEntries(conversations.map((c) => [c.id, present(c)])), loaded: true });
       get().fetchPresence(conversations.flatMap((c) => c.participants.map((p) => p.id)));
       // Latest message of every chat + profile/group photos, so the list works offline too.
       keepOffline(conversations.map((c) => c.lastMessage).filter(Boolean));
@@ -231,7 +246,7 @@ export const useChat = create((set, get) => {
 
     upsertConversation(conv) {
       const known = get().conversations[conv.id];
-      set((s) => ({ conversations: { ...s.conversations, [conv.id]: conv } }));
+      set((s) => ({ conversations: { ...s.conversations, [conv.id]: present(conv) } }));
       if (!known) get().fetchPresence(conv.participants.map((p) => p.id));
     },
 
@@ -736,16 +751,34 @@ export const useChat = create((set, get) => {
           Object.entries(s.conversations).map(([id, c]) => [
             id,
             c.participants.some((p) => p.id === user.id)
-              ? { ...c, participants: c.participants.map((p) => (p.id === user.id ? { ...p, ...user } : p)) }
+              ? present({
+                  ...c,
+                  // phone/email are replaced, not merged: absent means they're now private.
+                  participants: c.participants.map((p) =>
+                    p.id === user.id ? { ...p, ...user, phone: user.phone, email: user.email } : p
+                  ),
+                })
               : c,
           ])
         ),
       }));
     },
+
+    /** My contacts changed (address book sync, saved contact): show everyone's new names. */
+    refreshNames() {
+      set((s) => ({
+        conversations: Object.fromEntries(Object.entries(s.conversations).map(([id, c]) => [id, present(c)])),
+      }));
+      setNativeNames(savedNames());
+    },
   };
 });
 
-if (import.meta.env.DEV) window.__chat = useChat; // handy for debugging in devtools
+if (import.meta.env.DEV) window.__chat = useChat;
+
+// Names follow my contacts: re-apply them when the address book or saved contacts change.
+useContactMatches.subscribe((s, prev) => s.data !== prev.data && useChat.getState().refreshNames());
+usePeople.subscribe((s, prev) => s.saved !== prev.saved && useChat.getState().refreshNames()); // handy for debugging in devtools
 
 export const isCallMessage = (msg) => msg?.type === 'call' && !!msg.call;
 

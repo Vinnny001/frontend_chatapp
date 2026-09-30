@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, LogOut, Pencil } from 'lucide-react';
 import SidePanel from './SidePanel.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
+import UsernameInput from '../common/UsernameInput.jsx';
 import { api } from '../../lib/api.js';
 import { formatBytes } from '../../lib/format.js';
 import { clearDownloadedMedia, mediaUsage } from '../../lib/localdb.js';
@@ -54,14 +55,59 @@ function EditableField({ label, value, maxLength, onSave }) {
   );
 }
 
-function Toggle({ label, hint, checked, onChange }) {
+/** Username: set or change it (the new one must follow the rules and be free). */
+function UsernameField({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const [ok, setOk] = useState(true);
+
+  async function save() {
+    if (!ok || !draft) return;
+    if (draft !== value && !(await onSave(draft))) return;
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <div className="editable">
+        <span className="editable-label">Username</span>
+        <div className="editable-row">
+          <span className={`editable-value ${value ? '' : 'muted'}`}>{value ? `@${value}` : 'Not set: people see your phone number'}</span>
+          <button
+            className="icon-btn"
+            onClick={() => {
+              setDraft(value || '');
+              setEditing(true);
+            }}
+            aria-label={value ? 'Edit username' : 'Add username'}
+          >
+            <Pencil size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
-    <label className="toggle-row">
+    <div className="editable">
+      <span className="editable-label">Username</span>
+      <div className="editable-row">
+        <UsernameInput value={draft} current={value || ''} onChange={setDraft} onValid={setOk} autoFocus />
+        <button className="icon-btn" onClick={save} disabled={!ok || !draft} aria-label="Save username">
+          <Check size={20} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange, disabled }) {
+  return (
+    <label className={`toggle-row ${disabled ? 'disabled' : ''}`}>
       <span>
         {label}
         {hint && <small>{hint}</small>}
       </span>
-      <input type="checkbox" className="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" className="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
     </label>
   );
 }
@@ -133,8 +179,10 @@ export default function SettingsPanel() {
     try {
       const { user: updated } = await api('/api/users/me', { method: 'PATCH', body });
       setUser(updated);
+      return true;
     } catch (e) {
       toast(e.message, 'error');
+      return false;
     }
   }
 
@@ -151,11 +199,16 @@ export default function SettingsPanel() {
         )}
       </div>
       <div className="settings-group">
-        <EditableField label="Your name" value={user.name} maxLength={60} onSave={(name) => update({ name })} />
+        <EditableField label="Your name (only you see it)" value={user.name} maxLength={60} onSave={(name) => update({ name })} />
+        <UsernameField value={user.username} onSave={(username) => update({ username })} />
         <EditableField label="About" value={user.about || ''} maxLength={140} onSave={(about) => update({ about })} />
         <div className="editable">
           <span className="editable-label">Phone</span>
           <span className="editable-value">{user.phone}</span>
+        </div>
+        <div className="editable">
+          <span className="editable-label">Email</span>
+          <span className="editable-value">{user.email}</span>
         </div>
       </div>
 
@@ -166,6 +219,23 @@ export default function SettingsPanel() {
           hint="When off, nobody sees when you were last online"
           checked={user.settings?.showLastSeen !== false}
           onChange={(showLastSeen) => update({ settings: { showLastSeen } })}
+        />
+        <Toggle
+          label="Show my phone number"
+          hint={
+            user.username
+              ? 'When off, people who don’t have your number only see @' + user.username
+              : 'Add a username to keep your number private. Without one, people see your number.'
+          }
+          checked={!user.username || !!user.settings?.showPhone}
+          disabled={!user.username}
+          onChange={(showPhone) => update({ settings: { showPhone } })}
+        />
+        <Toggle
+          label="Share my email"
+          hint="Let the people you chat with see your email address, and find you by it"
+          checked={!!user.settings?.showEmail}
+          onChange={(showEmail) => update({ settings: { showEmail } })}
         />
       </div>
 

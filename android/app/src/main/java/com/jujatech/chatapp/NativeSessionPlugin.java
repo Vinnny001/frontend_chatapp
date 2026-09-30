@@ -51,6 +51,13 @@ public class NativeSessionPlugin extends Plugin {
         call.resolve();
     }
 
+    /** { names: JSON { userId: name } }: the names the user saved people under. */
+    @PluginMethod
+    public void setNames(PluginCall call) {
+        Session.prefs(getContext()).edit().putString("names", call.getString("names", "{}")).apply();
+        call.resolve();
+    }
+
     @PluginMethod
     public void clearSession(PluginCall call) {
         Session.prefs(getContext()).edit().clear().apply();

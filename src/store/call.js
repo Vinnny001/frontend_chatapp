@@ -4,6 +4,7 @@ import { emitAck } from '../lib/socket.js';
 import { uid } from '../lib/format.js';
 import { startRingtone, stopRingtone } from '../lib/notify.js';
 import { clearCallNotification, isNativeApp } from '../lib/native.js';
+import { displayName } from './people.js';
 import { toast } from './ui.js';
 
 // One active 1:1 call at a time. Media is peer-to-peer (WebRTC); the realtime service only
@@ -173,7 +174,8 @@ export const useCall = create((set, get) => ({
       return;
     }
     set({
-      call: { id: callId, conversationId, peer: from, kind, direction: 'incoming', state: 'ringing', muted: false, cameraOff: false, facingMode: 'user' },
+      // The caller as I know them (saved name, else @username or number).
+      call: { id: callId, conversationId, peer: { ...from, name: displayName(from) }, kind, direction: 'incoming', state: 'ringing', muted: false, cameraOff: false, facingMode: 'user' },
     });
     ringTimeout = setTimeout(() => get().call?.state === 'ringing' && get().finish('Missed call'), RING_TIMEOUT_MS);
     if (pendingAnswer?.callId === callId && pendingAnswer.until > Date.now()) {

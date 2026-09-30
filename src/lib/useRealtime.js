@@ -5,7 +5,8 @@ import { connectSocket, disconnectSocket } from './socket.js';
 import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
 import { closeLocalDb, openLocalDb } from './localdb.js';
-import { autoSyncContacts } from './contacts.js';
+import { autoSyncContacts, cachedContactMatches, useContactMatches } from './contacts.js';
+import { loadSavedContacts, resetPeople } from '../store/people.js';
 import { setupPush } from './push.js';
 import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
 import { useAuth } from '../store/auth.js';
@@ -24,6 +25,9 @@ export function useRealtime(token) {
 
     // 1) Show the saved offline copy straight away, then refresh from the server.
     openLocalDb(userId);
+    // Names people are shown under come from my contacts, so load those before the chats.
+    useContactMatches.setState({ userId, data: cachedContactMatches(userId) });
+    loadSavedContacts(userId).catch(() => {}); // offline: the saved copy is used
     chat.hydrate(loadCache(userId));
     // Android: mark messages the background sender delivered while we were closed as sent.
     chat.absorbBackgroundDeliveries();
@@ -158,6 +162,8 @@ export function useRealtime(token) {
       else {
         // Signed out: don't leave their chats or media on the device.
         clearNativeSession();
+        resetPeople();
+        useContactMatches.setState({ userId: null, data: null });
         clearCache(userId);
         closeLocalDb(userId, { erase: true });
       }

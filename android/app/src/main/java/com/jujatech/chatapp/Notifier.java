@@ -133,8 +133,11 @@ final class Notifier {
         if (conversationId == null) return;
         try {
             JSONObject chat = loadChat(context, conversationId);
-            chat.put("title", d.get("chatTitle"))
-                .put("isGroup", "1".equals(d.get("isGroup")))
+            boolean isGroup = "1".equals(d.get("isGroup"));
+            // One-to-one chats are titled with the name I saved the sender under, if any.
+            String title = isGroup ? d.get("chatTitle") : Session.nameFor(context, d.get("senderId"), d.get("chatTitle"));
+            chat.put("title", title)
+                .put("isGroup", isGroup)
                 .put("avatar", d.get("chatAvatar"));
             JSONArray messages = chat.getJSONArray("messages");
             String messageId = d.get("messageId");
@@ -144,7 +147,7 @@ final class Notifier {
             messages.put(new JSONObject()
                 .put("id", messageId)
                 .put("senderId", d.get("senderId"))
-                .put("name", d.get("senderName"))
+                .put("name", Session.nameFor(context, d.get("senderId"), d.get("senderName")))
                 .put("avatar", d.get("senderAvatar"))
                 .put("text", d.get("text"))
                 .put("at", parseLong(d.get("sentAt"), System.currentTimeMillis())));
@@ -348,7 +351,7 @@ final class Notifier {
         if (System.currentTimeMillis() - sentAt > 45_000) return; // arrived too late to answer
 
         boolean video = "video".equals(d.get("kind"));
-        String name = d.get("callerName") == null ? "Someone" : d.get("callerName");
+        String name = Session.nameFor(context, d.get("callerId"), d.get("callerName"));
         Person caller = person(context, d.get("callerId"), name, d.get("callerAvatar"));
         String conversationId = d.get("conversationId");
 
@@ -402,7 +405,7 @@ final class Notifier {
         if (conversationId == null || !canNotify(context)) return;
         int count = missed(context).getInt(conversationId, 0) + 1;
         missed(context).edit().putInt(conversationId, count).apply();
-        String name = d.get("callerName") == null ? "Someone" : d.get("callerName");
+        String name = Session.nameFor(context, d.get("callerId"), d.get("callerName"));
         String kind = "video".equals(d.get("kind")) ? "video" : "voice";
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_MISSED)

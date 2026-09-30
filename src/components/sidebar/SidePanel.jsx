@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useAuth } from '../../store/auth.js';
 import { useChat } from '../../store/chat.js';
+import { displayName, usePeople } from '../../store/people.js';
 import { useUI } from '../../store/ui.js';
 
 export default function SidePanel({ title, children, onBack }) {
@@ -24,6 +25,7 @@ export default function SidePanel({ title, children, onBack }) {
 export function usePeopleSearch(query) {
   const me = useAuth((s) => s.user?.id);
   const conversations = useChat((s) => s.conversations);
+  const saved = usePeople((s) => s.saved);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -32,8 +34,9 @@ export function usePeopleSearch(query) {
     for (const c of Object.values(conversations)) {
       for (const p of c.participants) if (p.id !== me) byId.set(p.id, p);
     }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [conversations, me]);
+    for (const { user } of Object.values(saved)) if (!byId.has(user.id)) byId.set(user.id, { ...user, name: displayName(user) });
+    return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [conversations, saved, me]);
 
   useEffect(() => {
     const q = query.trim();
@@ -45,7 +48,7 @@ export function usePeopleSearch(query) {
     const timer = setTimeout(async () => {
       try {
         const { users } = await api(`/api/users/search?q=${encodeURIComponent(q)}`);
-        setResults(users);
+        setResults(users.map((u) => ({ ...u, name: displayName(u) }))); // registered names are private
       } catch {
         setResults([]);
       } finally {
@@ -57,7 +60,15 @@ export function usePeopleSearch(query) {
 
   const q = query.trim().toLowerCase();
   const people = q
-    ? [...contacts.filter((c) => c.name.toLowerCase().includes(q) || c.phone?.includes(q)), ...results].filter(
+    ? [
+        ...contacts.filter(
+          (c) =>
+            (c.name || '').toLowerCase().includes(q) ||
+            (c.username && c.username.includes(q.replace(/^@/, ''))) ||
+            (c.phone && q.replace(/\D/g, '') && c.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
+        ),
+        ...results,
+      ].filter(
         (p, i, arr) => arr.findIndex((x) => x.id === p.id) === i
       )
     : contacts;

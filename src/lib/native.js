@@ -15,6 +15,14 @@ export function setNativeSession(token) {
   if (available()) quiet(NativeSession.setSession({ token, apiUrl: API_URL, realtimeUrl: REALTIME_URL }));
 }
 
+/**
+ * Names I saved people under ({ userId: name }), so notifications and incoming calls show
+ * them instead of the @username / number the server sends. Kept on the device only.
+ */
+export function setNativeNames(names) {
+  if (available()) quiet(NativeSession.setNames({ names: JSON.stringify(names) }));
+}
+
 export function clearNativeSession() {
   if (available()) return quiet(NativeSession.clearSession());
   return Promise.resolve();

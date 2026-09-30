@@ -42,6 +42,12 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - **Notifications (Android):** new messages arrive as pop-up (heads-up) notifications with sound through Firebase Cloud Messaging, including when the app is closed. The app asks for notification permission first, then contacts, one at a time. Tapping a notification opens that chat. The backends need `FIREBASE_SERVICE_ACCOUNT`, and the Android app needs `android/app/google-services.json` from the Firebase console (it isn't committed).
 - **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
+## Usernames, contacts and privacy
+
+- People appear under the name you saved them as (in the phone's address book, or in ChatApp), else their **@username**, else their **phone number**. Registered names stay private.
+- Choose a username at sign-up (optional) or in Settings, where you also decide whether to **show your phone number** (only possible to hide with a username) and **share your email**. Both are off by default.
+- In a chat's contact info you can **add the person to your ChatApp contacts** (with an optional name). If you can see their number (they have no username or chose to show it), you can also **save them to your phone contacts**; username-only people can't be saved to the phone.
+
 ## Notifications and calls (Android)
 
 - Messages: one notification per chat, stacking its messages with each sender's photo, plus **Reply** and **Mark as read** buttons that work without opening the app (a reply written offline is sent once the phone is back online). A notification goes away when you read the chat, here or on another phone.

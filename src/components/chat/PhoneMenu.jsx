@@ -4,6 +4,7 @@ import Menu from '../common/Menu.jsx';
 import Avatar from '../common/Avatar.jsx';
 import { invite, lookupPhone } from '../../lib/contacts.js';
 import { useChat } from '../../store/chat.js';
+import { displayName, handleOf } from '../../store/people.js';
 import { toast, useUI } from '../../store/ui.js';
 
 /** Opened by tapping a phone number in a message: chat with them if registered, otherwise invite. */
@@ -27,7 +28,9 @@ export default function PhoneMenu() {
   if (!menu) return null;
   const { phone } = menu;
   const dial = phone.replace(/[^\d+]/g, '');
-  const user = state.match?.user;
+  // I tapped their number, so I know it even if they keep it private.
+  const user = state.match?.user && { ...state.match.user, phone: state.match.user.phone || phone };
+  const name = user ? displayName(user) : '';
 
   const call = { label: `Call ${phone}`, icon: Phone, onClick: () => (window.location.href = `tel:${dial}`) };
   const copy = {
@@ -46,16 +49,17 @@ export default function PhoneMenu() {
   } else if (state.status === 'found') {
     header = (
       <div className="menu-header person">
-        <Avatar name={user.name} url={user.avatarUrl} size={36} />
+        <Avatar name={name} url={user.avatarUrl} size={36} />
         <span>
-          <strong>{user.name}</strong>
+          <strong>{name}</strong>
+          {handleOf(user) && handleOf(user) !== name && <small>{handleOf(user)}</small>}
           <small>{phone} is on ChatApp</small>
         </span>
       </div>
     );
     items = [
       {
-        label: `Message ${user.name.split(' ')[0]}`,
+        label: `Message ${name.startsWith('@') || name.startsWith('+') ? name : name.split(' ')[0]}`,
         icon: MessageCircle,
         onClick: () => useChat.getState().openDirect(user.id).catch((e) => toast(e.message, 'error')),
       },

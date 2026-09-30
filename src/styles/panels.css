@@ -828,3 +828,130 @@ button.doc-row {
 .call-row-meta .missed {
   color: var(--danger);
 }
+
+/* ---------- username field ---------- */
+.username-field {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.username-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text-3);
+}
+
+.username-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 10px 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.username-input.ok {
+  border-color: var(--accent);
+}
+
+.username-input.bad {
+  border-color: var(--danger);
+}
+
+.username-input .ok,
+.field-hint.ok {
+  color: var(--accent);
+}
+
+.username-input .bad,
+.field-hint.bad {
+  color: var(--danger);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.editable-value.muted {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.toggle-row.disabled {
+  opacity: 0.7;
+}
+
+/* ---------- contact info (one-to-one chat) ---------- */
+.contact-card {
+  display: grid;
+  gap: 8px;
+}
+
+.contact-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.contact-line span {
+  color: var(--text-3);
+}
+
+.contact-line strong,
+.contact-line a,
+.contact-line em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-line em {
+  color: var(--text-3);
+}
+
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-save {
+  display: grid;
+  gap: 8px;
+}
+
+.contact-save input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.contact-card .btn {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn.danger {
+  color: var(--danger);
+}

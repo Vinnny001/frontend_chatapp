@@ -37,6 +37,22 @@ final class Session {
         return prefs(context).getString("realtimeUrl", "");
     }
 
+    /**
+     * The name the user saved this person under (address book or ChatApp contacts), else
+     * the fallback the server sent (@username or phone number).
+     */
+    static String nameFor(Context context, String userId, String fallback) {
+        if (userId != null && !userId.isEmpty()) {
+            try {
+                String saved = new org.json.JSONObject(prefs(context).getString("names", "{}")).optString(userId, "");
+                if (!saved.isEmpty()) return saved;
+            } catch (Exception ignored) {
+                // no saved names yet
+            }
+        }
+        return fallback == null || fallback.isEmpty() ? "Someone" : fallback;
+    }
+
     /** Makes "/uploads/x.jpg" absolute against the API; full URLs are returned unchanged. */
     static String absolute(Context context, String url) {
         if (url == null || url.isEmpty()) return null;

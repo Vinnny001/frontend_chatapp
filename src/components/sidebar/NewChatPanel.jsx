@@ -5,16 +5,26 @@ import SidePanel, { usePeopleSearch } from './SidePanel.jsx';
 import { canReadContacts, invite, shareInvite, syncContacts, useContactMatchesFor } from '../../lib/contacts.js';
 import { useAuth } from '../../store/auth.js';
 import { useChat, isOnlineSelector } from '../../store/chat.js';
+import { displayName, handleOf, knownPhone, usePeople } from '../../store/people.js';
 import { toast, useUI } from '../../store/ui.js';
 
-export function PersonRow({ person, onClick, selected, right, sub }) {
+/** Second line: their @username (when the name shown is something else), else about / number. */
+export function personSub(person, name) {
+  const handle = handleOf(person);
+  if (handle && handle !== name) return [handle, person.about].filter(Boolean).join(' · ');
+  return person.about || knownPhone(person) || '';
+}
+
+export function PersonRow({ person, onClick, selected, right, sub, name: nameOverride }) {
   const online = useChat(isOnlineSelector(person.id));
+  usePeople((s) => s.saved[person.id]); // re-render when I save or rename them
+  const name = nameOverride || displayName(person);
   return (
     <button className={`person-row ${selected ? 'selected' : ''}`} onClick={onClick}>
-      <Avatar name={person.name} url={person.avatarUrl} size={44} online={online} />
+      <Avatar name={name} url={person.avatarUrl} size={44} online={online} />
       <span className="person-info">
-        <span className="person-name">{person.name}</span>
-        <span className="person-sub">{sub ?? (person.about || person.phone)}</span>
+        <span className="person-name">{name}</span>
+        <span className="person-sub">{sub ?? personSub(person, name)}</span>
       </span>
       {right}
     </button>
@@ -88,8 +98,8 @@ function ContactsSection({ query, onStart }) {
       {registered.map((e) => (
         <PersonRow
           key={e.user.id}
-          person={{ ...e.user, name: e.name }}
-          sub={e.user.name !== e.name ? `~${e.user.name} · ${e.user.about || ''}` : e.user.about}
+          person={{ ...e.user, phone: e.phone }}
+          name={e.name}
           onClick={() => onStart(e.user)}
         />
       ))}
@@ -104,6 +114,23 @@ function ContactsSection({ query, onStart }) {
           Show all {invites.length} contacts
         </button>
       )}
+    </>
+  );
+}
+
+/** People I saved in ChatApp (by username or number), on every device. */
+function SavedContactsSection({ onStart }) {
+  const saved = usePeople((s) => s.saved);
+  const list = Object.values(saved)
+    .map((c) => ({ user: c.user, name: displayName(c.user) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (!list.length) return null;
+  return (
+    <>
+      <h3 className="section-label">Saved contacts</h3>
+      {list.map(({ user, name }) => (
+        <PersonRow key={user.id} person={user} name={name} onClick={() => onStart(user)} />
+      ))}
     </>
   );
 }
@@ -132,7 +159,7 @@ export default function NewChatPanel() {
   return (
     <SidePanel title="New chat">
       <div className="panel-search">
-        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone or email" />
+        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search @username, phone number or email" />
       </div>
       <button className="person-row action" onClick={() => openPanel('newGroup')}>
         <span className="action-icon">
@@ -155,12 +182,13 @@ export default function NewChatPanel() {
           ))}
           {!people.length && (
             <p className="panel-empty">
-              {loading ? 'Searching…' : query ? 'No one found. Try their full phone number or email.' : 'Search for someone to start chatting.'}
+              {loading ? 'Searching…' : query ? 'No one found. Try their @username or full phone number.' : 'Search for someone to start chatting.'}
             </p>
           )}
         </>
       )}
 
+      {!query && <SavedContactsSection onStart={start} />}
       {canReadContacts() && <ContactsSection query={query} onStart={start} />}
     </SidePanel>
   );

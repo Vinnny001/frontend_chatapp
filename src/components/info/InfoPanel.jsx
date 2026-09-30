@@ -16,6 +16,8 @@ import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
 import { conversationTitle, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
+import { canSaveToPhone, contactSource, handleOf, knownPhone, removeContact, saveContact, saveToPhone, usePeople } from '../../store/people.js';
+import { canReadContacts } from '../../lib/contacts.js';
 
 const DISAPPEARING = [
   { value: 0, label: 'Off' },
@@ -213,6 +215,118 @@ function MemberRow({ member, conv, me, amAdmin }) {
   );
 }
 
+/**
+ * The other person in a one-to-one chat: their @username, number and email (when I may see
+ * them), and saving them to my ChatApp contacts or my phone's address book.
+ */
+function ContactCard({ peer }) {
+  const saved = usePeople((s) => s.saved[peer.id]);
+  const source = contactSource(peer.id);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const handle = handleOf(peer);
+  const phone = knownPhone(peer);
+  const identity = handle || phone;
+
+  const run = async (fn, done) => {
+    setBusy(true);
+    try {
+      await fn();
+      if (done) toast(done);
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = () => {
+    setName(saved?.name || '');
+    setEditing(true);
+  };
+
+  return (
+    <section className="info-card contact-card">
+      <h3 className="section-label">Contact info</h3>
+      {handle && (
+        <div className="contact-line">
+          <span>Username</span>
+          <strong>{handle}</strong>
+        </div>
+      )}
+      <div className="contact-line">
+        <span>Phone</span>
+        {phone ? <strong>{phone}</strong> : <em>Private</em>}
+      </div>
+      {peer.email && (
+        <div className="contact-line">
+          <span>Email</span>
+          <a href={`mailto:${peer.email}`}>{peer.email}</a>
+        </div>
+      )}
+
+      {editing ? (
+        <div className="contact-save">
+          <p className="hint">
+            Saving <strong>{identity}</strong> to your ChatApp contacts
+            {handle && !phone ? ' (they keep their phone number private)' : ''}.
+          </p>
+          <input
+            autoFocus
+            maxLength={60}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={`Name (optional, else shown as ${identity})`}
+            onKeyDown={(e) => e.key === 'Enter' && run(() => saveContact(peer, name).then(() => setEditing(false)), 'Contact saved')}
+          />
+          <div className="row-end">
+            <button className="btn btn-ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => run(() => saveContact(peer, name).then(() => setEditing(false)), 'Contact saved')}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ) : source === 'phone' ? (
+        <p className="hint">In your phone contacts.</p>
+      ) : saved ? (
+        <div className="contact-actions">
+          <span className="hint">Saved in ChatApp{saved.name ? ` as “${saved.name}”` : ''}.</span>
+          <button className="btn btn-ghost btn-sm" onClick={startEdit}>
+            <Pencil size={15} /> Edit name
+          </button>
+          <button className="btn btn-ghost btn-sm danger" disabled={busy} onClick={() => run(() => removeContact(peer.id), 'Removed from contacts')}>
+            <UserMinus size={15} /> Remove
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-ghost" onClick={startEdit}>
+          <UserPlus size={16} /> Add to contacts
+        </button>
+      )}
+
+      {!editing && canSaveToPhone(peer) && (
+        <button
+          className="btn btn-ghost"
+          disabled={busy}
+          onClick={() => run(() => saveToPhone(peer, saved?.name), 'Saved to your phone contacts')}
+        >
+          <Phone size={16} /> Save to phone contacts
+        </button>
+      )}
+      {!editing && canReadContacts() && !phone && handle && (
+        <p className="hint">{handle} keeps their phone number private, so they can’t be saved to your phone contacts.</p>
+      )}
+    </section>
+  );
+}
+
 function InfoContent({ conv }) {
   const me = useAuth((s) => s.user?.id);
   const { setPrefs, clearChat, updateConversation } = useChat.getState();
@@ -254,7 +368,7 @@ function InfoContent({ conv }) {
     }
   }
 
-  const members = [...conv.participants].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'admin' ? -1 : 1));
+  const members = [...conv.participants].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : a.role === b.role ? (a.name || '').localeCompare(b.name || '') : a.role === 'admin' ? -1 : 1));
 
   return (
     <>
@@ -282,8 +396,15 @@ function InfoContent({ conv }) {
           </h2>
         )}
         <p className="info-sub">
-          {isGroup ? `Group · ${conv.participants.length} members` : peer?.phone}
-          {!isGroup && (presence?.online ? ' · online' : presence?.lastSeen ? ` · ${formatLastSeen(presence.lastSeen)}` : '')}
+          {isGroup
+            ? `Group · ${conv.participants.length} members`
+            : [
+                handleOf(peer) !== title && handleOf(peer),
+                peer?.phone !== title && peer?.phone,
+                presence?.online ? 'online' : presence?.lastSeen && formatLastSeen(presence.lastSeen),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
         </p>
         <div className="info-actions">
           {!isGroup && (
@@ -310,6 +431,8 @@ function InfoContent({ conv }) {
           </button>
         </div>
       </section>
+
+      {!isGroup && peer && <ContactCard peer={peer} />}
 
       {(isGroup || peer?.about) && (
         <section className="info-card">

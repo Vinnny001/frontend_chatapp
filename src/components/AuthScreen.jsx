@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { Lock, MessageCircle, Phone, Sparkles, Zap } from 'lucide-react';
 import { useAuth } from '../store/auth.js';
+import UsernameInput from './common/UsernameInput.jsx';
 
-const EMPTY = { name: '', email: '', phone: '', gender: '', password: '', confirm: '', identifier: '' };
+const EMPTY = { name: '', username: '', email: '', phone: '', gender: '', password: '', confirm: '', identifier: '' };
 
 export default function AuthScreen() {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [usernameOk, setUsernameOk] = useState(true);
   const { login, signup } = useAuth();
 
   const field = (key) => ({
@@ -20,12 +22,14 @@ export default function AuthScreen() {
     e.preventDefault();
     setError('');
     if (mode === 'signup' && form.password !== form.confirm) return setError('Passwords do not match');
+    if (mode === 'signup' && !usernameOk) return setError('Choose another username, or leave it empty');
     setBusy(true);
     try {
       if (mode === 'login') await login(form.identifier.trim(), form.password);
       else
         await signup({
           name: form.name,
+          ...(form.username.trim() && { username: form.username.trim() }),
           email: form.email,
           phone: form.phone,
           password: form.password,
@@ -91,6 +95,20 @@ export default function AuthScreen() {
               <label>
                 Full name
                 <input autoComplete="name" required maxLength={60} {...field('name')} />
+                <small className="field-hint">Only you see this.</small>
+              </label>
+              <label>
+                Username
+                <UsernameInput
+                  optional
+                  value={form.username}
+                  onChange={(username) => setForm((f) => ({ ...f, username }))}
+                  onValid={setUsernameOk}
+                />
+                <small className="field-hint">
+                  People who don’t have your number see your username instead of your phone number. Without one, they see
+                  your number.
+                </small>
               </label>
               <label>
                 Email
