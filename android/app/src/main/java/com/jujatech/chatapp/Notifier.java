@@ -71,6 +71,7 @@ final class Notifier {
         ensureChannels(context);
         switch (type) {
             case "message":
+                keepForApp(context, data);
                 if (!Session.foreground) showMessage(context, data);
                 break;
             case "read":
@@ -123,6 +124,56 @@ final class Notifier {
     }
 
     // ------------------------------------------------------------------ messages
+
+    private static SharedPreferences inbox(Context context) {
+        return context.getSharedPreferences("chat_inbox", Context.MODE_PRIVATE);
+    }
+
+    /**
+     * Keeps every pushed message for the app, which picks them up when it next opens (see
+     * takeReceivedMessages), so a message you were notified about is there even offline.
+     */
+    private static void keepForApp(Context context, Map<String, String> d) {
+        String messageId = d.get("messageId");
+        if (messageId == null || d.get("conversationId") == null) return;
+        try {
+            JSONObject entry = new JSONObject()
+                .put("messageId", messageId)
+                .put("conversationId", d.get("conversationId"))
+                .put("senderId", d.get("senderId"))
+                .put("text", d.get("text"))
+                .put("sentAt", parseLong(d.get("sentAt"), System.currentTimeMillis()))
+                .put("message", d.get("message") == null ? "" : d.get("message"))
+                .put("keptAt", System.currentTimeMillis());
+            SharedPreferences prefs = inbox(context);
+            SharedPreferences.Editor edit = prefs.edit().putString(messageId, entry.toString());
+            Map<String, ?> all = prefs.getAll();
+            if (all.size() >= 500) { // keep the newest 500
+                String oldest = null;
+                long oldestAt = Long.MAX_VALUE;
+                for (Map.Entry<String, ?> e : all.entrySet()) {
+                    long at = new JSONObject(String.valueOf(e.getValue())).optLong("keptAt");
+                    if (at < oldestAt) {
+                        oldestAt = at;
+                        oldest = e.getKey();
+                    }
+                }
+                if (oldest != null) edit.remove(oldest);
+            }
+            edit.apply();
+        } catch (Exception ignored) {
+            // the app fetches it from the server instead
+        }
+    }
+
+    /** Messages received by push since the app last looked (JSON strings), then forgotten. */
+    static java.util.List<String> takeKept(Context context) {
+        SharedPreferences prefs = inbox(context);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Object value : prefs.getAll().values()) out.add(String.valueOf(value));
+        prefs.edit().clear().apply();
+        return out;
+    }
 
     private static SharedPreferences history(Context context) {
         return context.getSharedPreferences("chat_notifications", Context.MODE_PRIVATE);
@@ -339,6 +390,7 @@ final class Notifier {
     static void clearAll(Context context) {
         history(context).edit().clear().apply();
         missed(context).edit().clear().apply();
+        inbox(context).edit().clear().apply(); // signed out: don't hand them to the next account
         NotificationManagerCompat.from(context).cancelAll();
     }
 

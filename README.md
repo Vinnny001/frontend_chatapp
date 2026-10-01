@@ -44,6 +44,11 @@ The `android/` project is committed, and its microphone, camera and contacts per
 
 ## Usernames, contacts and privacy
 
+- Contacts sync by themselves: when the app starts, when it comes back to the foreground (if the last sync is over 10 minutes old) and when New chat opens.
+- **Message yourself**: at the top of New chat, a private chat with just you for notes, links and files.
+- Messages you were notified about are kept on the phone, so they're in the app even if it's opened offline. Long messages that don't fit in a notification show a preview until the full text loads.
+- Chat history stays on the device. Reconnecting only fetches what's new, and scrolling back shows saved messages straight away.
+
 - People appear under the name you saved them as (in the phone's address book, or in ChatApp), else their **@username**, else their **phone number**. Registered names stay private.
 - Choose a username at sign-up (optional) or in Settings, where you also decide whether to **show your phone number** (only possible to hide with a username) and **share your email**. Both are off by default.
 - In a chat's contact info you can **add the person to your ChatApp contacts** (with an optional name). If you can see their number (they have no username or chose to show it), you can also **save them to your phone contacts**; username-only people can't be saved to the phone.

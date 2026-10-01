@@ -16,7 +16,7 @@ import {
 import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
 import { connectionKind } from '../lib/network.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
-import { clearChatNotifications, setNativeNames } from '../lib/native.js';
+import { clearChatNotifications, setNativeNames, takeReceivedMessages } from '../lib/native.js';
 import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
 import { useAuth } from './auth.js';
@@ -62,9 +62,12 @@ function mergeItems(...lists) {
       const key = keyOf(m);
       const prev = byKey.get(key);
       if (prev && !prev.pending && m.pending) continue;
-      byKey.set(key, prev && !(prev.pending && !m.pending) ? { ...prev, ...m } : m);
+      byKey.set(key, prev && !(prev.pending && !m.pending) ? { ...prev, ...m, partial: m.partial } : m);
     }
   }
+  // A preview picked up from a push (no clientId) is the same message as the server's copy.
+  const full = new Set([...byKey.values()].filter((m) => !m.partial).map((m) => m.id));
+  for (const [key, m] of byKey) if (m.partial && full.has(m.id)) byKey.delete(key);
   return [...byKey.values()].sort((a, b) => {
     if (!!a.pending !== !!b.pending) return a.pending ? 1 : -1;
     return ts(a.createdAt) - ts(b.createdAt);
@@ -96,9 +99,22 @@ function present(conv) {
   };
 }
 
+/** My chat with myself ("Message yourself"): a direct chat where I'm the only member. */
+export const isSelfChat = (conv, me = meId()) =>
+  conv?.type === 'direct' && conv.participants.length > 0 && conv.participants.every((p) => p.id === me);
+
+/** The photo shown for a chat: the group's, mine for my own chat, else the other person's. */
+export function chatAvatarUrl(conv, me = meId()) {
+  if (!conv) return null;
+  if (conv.type === 'group') return conv.avatarUrl;
+  if (isSelfChat(conv, me)) return useAuth.getState().user?.avatarUrl ?? null;
+  return peerOf(conv, me)?.avatarUrl ?? null;
+}
+
 export function conversationTitle(conv, me) {
   if (!conv) return '';
   if (conv.type === 'group') return conv.name || 'Group';
+  if (isSelfChat(conv, me)) return `${useAuth.getState().user?.name || 'Me'} (You)`;
   return peerOf(conv, me)?.name || 'Unknown';
 }
 
@@ -121,7 +137,7 @@ export function messageStatus(msg, conv, me) {
   if (msg.pending) return msg.status === 'failed' ? 'failed' : 'pending';
   if (msg.sender !== me || !conv) return null;
   const others = conv.participants.filter((p) => p.id !== me);
-  if (!others.length) return 'sent';
+  if (!others.length) return 'read'; // my own chat: nobody else to wait for
   const t = ts(msg.createdAt);
   if (others.every((p) => ts(p.lastReadAt) >= t)) return 'read';
   if (others.every((p) => ts(p.lastDeliveredAt) >= t)) return 'delivered';
@@ -329,11 +345,17 @@ export const useChat = create((set, get) => {
       const oldest = thread.items.find((m) => !m.pending);
 
       // Opening a chat: show what's stored on the device straight away, then refresh.
-      if (!older && !thread.loaded) {
+      if (!older && (!thread.loaded || thread.stale)) {
         const local = await readMessages(convId, { limit: PAGE });
         if (local.length) {
           patchThread(convId, (t) => ({ items: mergeItems(local, t.items), loaded: true, stale: true, hasMore: true }));
         }
+      }
+      // Scrolling back: older messages saved on the device show at once; the server's copy
+      // (fetched below) fills any gap.
+      if (older && oldest) {
+        const local = await readMessages(convId, { before: oldest.createdAt, limit: PAGE });
+        if (local.length) patchThread(convId, (t) => ({ items: mergeItems(local, t.items) }));
       }
 
       try {
@@ -343,9 +365,13 @@ export const useChat = create((set, get) => {
         keepOffline(messages);
         patchThread(convId, (t) => {
           if (older) return { items: mergeItems(messages, t.items), hasMore, loading: false };
-          // A stale offline copy may have a gap before the newest page: replace it, keeping
-          // only messages that are still waiting to be sent.
-          const base = t.stale ? t.items.filter((m) => m.pending) : t.items;
+          // Keep the history we already have when the newest page joins up with it. Only a
+          // copy with a gap before the newest page is dropped from view (it stays on the
+          // device and comes back when scrolling up), keeping messages still being sent.
+          const kept = t.items.filter((m) => !m.pending && !m.partial);
+          const newestKept = kept.length ? ts(kept[kept.length - 1].createdAt) : 0;
+          const joinsUp = !hasMore || !kept.length || (messages.length > 0 && ts(messages[0].createdAt) <= newestKept);
+          const base = t.stale && !joinsUp ? t.items.filter((m) => m.pending) : t.items;
           return {
             items: mergeItems(base, messages),
             hasMore: t.stale || !t.loaded ? hasMore : t.hasMore,
@@ -645,7 +671,48 @@ export const useChat = create((set, get) => {
 
     // ---------------------------------------------------------------- realtime events
 
-    async onMessageNew(msg) {
+    /**
+     * Messages that reached the phone by push (maybe while the app was closed): show them now,
+     * even offline, instead of waiting for the server. The server's copy replaces them later.
+     */
+    async absorbPushedMessages() {
+      const kept = await takeReceivedMessages();
+      if (!kept.length) return;
+      const me = meId();
+      const messages = kept
+        .map((k) => {
+          if (k.message) {
+            try {
+              return JSON.parse(k.message);
+            } catch {
+              /* fall through to the preview */
+            }
+          }
+          // Too long to fit in a push: show the preview until the full text loads.
+          return {
+            id: k.messageId,
+            conversationId: k.conversationId,
+            sender: k.senderId,
+            type: 'text',
+            text: k.text || '',
+            media: null,
+            reactions: [],
+            createdAt: new Date(k.sentAt).toISOString(),
+            partial: true,
+          };
+        })
+        .filter((m) => m.id && m.conversationId && m.sender !== me)
+        .sort((a, b) => ts(a.createdAt) - ts(b.createdAt));
+      for (const msg of messages) {
+        if (!get().conversations[msg.conversationId]) {
+          saveMessages([msg]); // a chat we don't have yet: shown once it loads
+          continue;
+        }
+        await get().onMessageNew(msg, { quiet: true });
+      }
+    },
+
+    async onMessageNew(msg, { quiet = false } = {}) {
       const me = meId();
       const convId = msg.conversationId;
       let fetched = false;
@@ -656,8 +723,18 @@ export const useChat = create((set, get) => {
           return;
         }
       }
-      keepOffline([msg]);
-      if (get().threads[convId]?.loaded) addItems(convId, [msg]);
+      if (quiet) {
+        // Picked up from a push: skip if we already have it, or something newer.
+        const conv = get().conversations[convId];
+        const known = get().threads[convId]?.items.some((m) => m.id === msg.id) || conv?.lastMessage?.id === msg.id;
+        if (known) return;
+        keepOffline([msg]);
+        if (get().threads[convId]?.loaded) addItems(convId, [msg]);
+        if (conv && ts(conv.lastMessageAt) >= ts(msg.createdAt)) return;
+      } else {
+        keepOffline([msg]);
+        if (get().threads[convId]?.loaded) addItems(convId, [msg]);
+      }
 
       const mine = msg.sender === me;
       // Calls I answered or declined are logged in the chat but aren't "unread"; missed ones are.
@@ -680,7 +757,7 @@ export const useChat = create((set, get) => {
       }
 
       const conv = get().conversations[convId];
-      if (!conv || conv.me?.muted || isViewing(convId) || !counts) return;
+      if (quiet || !conv || conv.me?.muted || isViewing(convId) || !counts) return; // already notified
       if (useUI.getState().sounds) playIncoming();
       if (document.visibilityState !== 'visible') {
         const sender = conv.participants.find((p) => p.id === msg.sender);

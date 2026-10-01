@@ -33,6 +33,19 @@ export function clearChatNotifications(conversationId) {
   if (available() && conversationId) quiet(NativeSession.clearConversation({ conversationId }));
 }
 
+/** Messages that arrived by push since last time (Android keeps them for the app). */
+export async function takeReceivedMessages() {
+  if (!available()) return [];
+  const { messages = [] } = await NativeSession.takeReceivedMessages().catch(() => ({}));
+  return messages.map((m) => {
+    try {
+      return JSON.parse(m);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
 /** Ring with the phone's ringtone / vibration, following its ring mode (app on screen). */
 export const startNativeRinging = () => available() && quiet(NativeSession.startRinging());
 export const stopNativeRinging = () => available() && quiet(NativeSession.stopRinging());

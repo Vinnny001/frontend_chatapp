@@ -5,7 +5,7 @@ import Menu from '../common/Menu.jsx';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { conversationTitle, peerOf, useChat, presenceSelector } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, isSelfChat, peerOf, useChat, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
 export function useSubtitle(conv, me) {
@@ -20,6 +20,7 @@ export function useSubtitle(conv, me) {
     const names = typers.map(([id]) => conv.participants.find((p) => p.id === id)?.name?.split(' ')[0] || 'Someone');
     return { text: `${names.join(', ')} ${recording ? 'recording audio…' : typers.length > 1 ? 'are typing…' : 'is typing…'}`, live: true };
   }
+  if (isSelfChat(conv, me)) return { text: 'Message yourself' };
   if (conv.type === 'direct') {
     if (presence?.online) return { text: 'online' };
     const lastSeen = presence?.lastSeen ?? peer?.lastSeen;
@@ -51,7 +52,7 @@ export default function ChatHeader({ conv }) {
         <ArrowLeft size={22} />
       </button>
       <button className="chat-header-main" onClick={() => setInfoOpen(infoOpen === 'info' ? false : 'info')}>
-        <Avatar name={title} url={conv.type === 'group' ? conv.avatarUrl : peer?.avatarUrl} group={conv.type === 'group'} size={42} />
+        <Avatar name={title} url={chatAvatarUrl(conv, me)} group={conv.type === 'group'} size={42} />
         <span className="chat-header-text">
           <span className="chat-title">
             {title}
@@ -60,7 +61,7 @@ export default function ChatHeader({ conv }) {
           <span className={`chat-subtitle ${subtitle.live ? 'live' : ''}`}>{subtitle.text}</span>
         </span>
       </button>
-      {conv.type === 'direct' && (
+      {conv.type === 'direct' && peer && (
         <>
           <button className="icon-btn" onClick={() => call('video')} aria-label="Video call" title="Video call">
             <Video size={21} />
@@ -89,7 +90,7 @@ export default function ChatHeader({ conv }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: conv.type === 'group' ? 'Group info' : 'Contact info', icon: Info, onClick: () => setInfoOpen('info') },
+            { label: conv.type === 'group' ? 'Group info' : peer ? 'Contact info' : 'Chat info', icon: Info, onClick: () => setInfoOpen('info') },
             { label: 'Disappearing messages', icon: Timer, onClick: () => setInfoOpen('info') },
             {
               label: conv.me?.muted ? 'Unmute notifications' : 'Mute notifications',

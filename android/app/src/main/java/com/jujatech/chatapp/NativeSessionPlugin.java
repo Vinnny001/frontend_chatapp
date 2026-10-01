@@ -41,6 +41,16 @@ public class NativeSessionPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /** Messages that arrived by push (possibly while the app was closed), as JSON strings. */
+    @PluginMethod
+    public void takeReceivedMessages(PluginCall call) {
+        com.getcapacitor.JSArray list = new com.getcapacitor.JSArray();
+        for (String item : Notifier.takeKept(getContext())) list.put(item);
+        JSObject result = new JSObject();
+        result.put("messages", list);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void setSession(PluginCall call) {
         Session.prefs(getContext()).edit()

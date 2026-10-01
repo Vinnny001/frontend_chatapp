@@ -78,29 +78,41 @@ export async function syncContacts(userId) {
   return result;
 }
 
-const RESYNC_EVERY_MS = 12 * 60 * 60 * 1000;
+const ASK_AGAIN_MS = 24 * 3600 * 1000;
+let running = null;
 
 /**
- * Called once the user is signed in on a phone: asks for contacts access the first time
- * (like WhatsApp), then keeps the "who's on ChatApp" list fresh in the background.
+ * Keeps "who's on ChatApp" in sync with the phone's address book without the user tapping
+ * anything: asks for contacts access when needed (again a day later if the prompt was
+ * dismissed or never shown), then re-reads the address book when the app starts, comes back
+ * to the foreground or the New chat screen opens, if the last sync is older than `minAgeMs`.
  * Returns the permission state so the UI can explain "limited" access on iOS.
  */
-export async function autoSyncContacts(userId) {
+export async function autoSyncContacts(userId, { minAgeMs = 0 } = {}) {
   if (!canReadContacts() || !userId) return null;
-  const { contacts: state } = await Contacts.checkPermissions();
-  const askedKey = `contacts.asked.${userId}`;
-  if (state === 'denied') return state;
-  if (state !== 'granted' && state !== 'limited' && storage.get(askedKey)) return state; // asked before, said no
-  storage.set(askedKey, true);
-
-  const cached = cachedContactMatches(userId);
-  if (state === 'granted' && cached && Date.now() - cached.syncedAt < RESYNC_EVERY_MS) return state;
-  try {
-    await syncContacts(userId); // shows the system permission dialog if not decided yet
-    return (await Contacts.checkPermissions()).contacts;
-  } catch {
-    return 'denied';
-  }
+  if (running) return running;
+  running = (async () => {
+    const { contacts: state } = await Contacts.checkPermissions();
+    if (state === 'denied') return state;
+    const allowed = state === 'granted' || state === 'limited';
+    if (!allowed) {
+      const askedKey = `contacts.asked.${userId}`;
+      const askedAt = Number(storage.get(askedKey)) || 0; // (older versions stored `true`)
+      if (Date.now() - askedAt < ASK_AGAIN_MS) return state;
+      storage.set(askedKey, Date.now());
+    }
+    const cached = cachedContactMatches(userId);
+    if (allowed && cached && Date.now() - cached.syncedAt < minAgeMs) return state;
+    try {
+      await syncContacts(userId); // shows the system permission dialog if not decided yet
+      return (await Contacts.checkPermissions()).contacts;
+    } catch {
+      return (await Contacts.checkPermissions().catch(() => ({}))).contacts || 'denied';
+    }
+  })().finally(() => {
+    running = null;
+  });
+  return running;
 }
 
 /** Is this phone number on ChatApp? Resolves to { user, self } or null. */

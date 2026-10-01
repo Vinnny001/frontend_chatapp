@@ -29,8 +29,10 @@ export function useRealtime(token) {
     useContactMatches.setState({ userId, data: cachedContactMatches(userId) });
     loadSavedContacts(userId).catch(() => {}); // offline: the saved copy is used
     chat.hydrate(loadCache(userId));
-    // Android: mark messages the background sender delivered while we were closed as sent.
+    // Android: mark messages the background sender delivered while we were closed as sent,
+    // and show messages that arrived by push while we were closed (works offline).
     chat.absorbBackgroundDeliveries();
+    chat.absorbPushedMessages();
     let initialLoadOk = true;
     chat.loadConversations().catch((e) => {
       initialLoadOk = false;
@@ -54,7 +56,11 @@ export function useRealtime(token) {
     // while one is open, so ask in turn: notifications first, then contacts.
     (async () => {
       // Push notifications for new messages (tap one to open that chat).
-      await setupPush(openChat).catch((err) => console.warn('Push setup failed', err));
+      // (Never let a stuck push setup hold up the contacts sync.)
+      await Promise.race([
+        setupPush(openChat).catch((err) => console.warn('Push setup failed', err)),
+        new Promise((resolve) => setTimeout(resolve, 20000)),
+      ]);
       // Contacts: ask once and keep "who's on ChatApp" in sync.
       const state = await autoSyncContacts(userId).catch(() => null);
       if (state === 'limited') {
@@ -142,7 +148,9 @@ export function useRealtime(token) {
       } else {
         onOnline();
         // Notifications stay until their chat is read (like WhatsApp); the open chat is read now.
+        useChat.getState().absorbPushedMessages();
         useChat.getState().retryPending();
+        autoSyncContacts(userId, { minAgeMs: 10 * 60 * 1000 }).catch(() => {}); // new contacts on the phone
       }
     });
     cleanups.push(() => appHandle.then((h) => h.remove()).catch(() => {}));

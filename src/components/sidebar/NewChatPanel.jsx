@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BookUser, RefreshCw, Share2, Users } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import SidePanel, { usePeopleSearch } from './SidePanel.jsx';
-import { canReadContacts, invite, shareInvite, syncContacts, useContactMatchesFor } from '../../lib/contacts.js';
+import { autoSyncContacts, canReadContacts, invite, shareInvite, syncContacts, useContactMatchesFor } from '../../lib/contacts.js';
 import { useAuth } from '../../store/auth.js';
 import { useChat, isOnlineSelector } from '../../store/chat.js';
 import { displayName, handleOf, knownPhone, usePeople } from '../../store/people.js';
@@ -52,6 +52,10 @@ function ContactsSection({ query, onStart }) {
   // Updates by itself when the automatic background sync finishes.
   const data = useContactMatchesFor(userId);
   const [busy, setBusy] = useState(false);
+  // Opening New chat refreshes the list in the background (new numbers saved on the phone).
+  useEffect(() => {
+    autoSyncContacts(userId, { minAgeMs: 30 * 1000 }).catch(() => {});
+  }, [userId]);
   const [showAllInvites, setShowAllInvites] = useState(false);
 
   async function sync() {
@@ -118,6 +122,20 @@ function ContactsSection({ query, onStart }) {
   );
 }
 
+/** Like WhatsApp: a chat with yourself for notes, links and files. */
+function MessageYourselfRow({ onStart }) {
+  const me = useAuth((s) => s.user);
+  if (!me) return null;
+  return (
+    <PersonRow
+      person={{ id: me.id, avatarUrl: me.avatarUrl }}
+      name={`${me.name} (You)`}
+      sub="Message yourself"
+      onClick={() => onStart({ id: me.id })}
+    />
+  );
+}
+
 /** People I saved in ChatApp (by username or number), on every device. */
 function SavedContactsSection({ onStart }) {
   const saved = usePeople((s) => s.saved);
@@ -167,6 +185,7 @@ export default function NewChatPanel() {
         </span>
         <span className="person-name">New group</span>
       </button>
+      {!query && <MessageYourselfRow onStart={start} />}
       <button className="person-row action" onClick={shareLink}>
         <span className="action-icon">
           <Share2 size={20} />

@@ -14,7 +14,7 @@ import { readMessages } from '../../lib/localdb.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { conversationTitle, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, isSelfChat, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 import { canSaveToPhone, contactSource, handleOf, knownPhone, removeContact, saveContact, saveToPhone, usePeople } from '../../store/people.js';
 import { canReadContacts } from '../../lib/contacts.js';
@@ -376,7 +376,7 @@ function InfoContent({ conv }) {
         {isGroup ? (
           <AvatarPicker url={conv.avatarUrl} name={title} group size={150} disabled={!amAdmin} onChange={(avatarUrl) => save({ avatarUrl })} />
         ) : (
-          <Avatar name={title} url={peer?.avatarUrl} size={150} onClick={peer?.avatarUrl ? () => useUI.getState().openViewer({ url: peer.avatarUrl, type: 'image', name: peer.name }) : undefined} />
+          <Avatar name={title} url={chatAvatarUrl(conv, me)} size={150} onClick={chatAvatarUrl(conv, me) ? () => useUI.getState().openViewer({ url: chatAvatarUrl(conv, me), type: 'image', name: title }) : undefined} />
         )}
         {editingName ? (
           <div className="editable-row center">
@@ -398,7 +398,9 @@ function InfoContent({ conv }) {
         <p className="info-sub">
           {isGroup
             ? `Group · ${conv.participants.length} members`
-            : [
+            : isSelfChat(conv, me)
+              ? 'Message yourself: notes, links and files you want to keep'
+              : [
                 handleOf(peer) !== title && handleOf(peer),
                 peer?.phone !== title && peer?.phone,
                 presence?.online ? 'online' : presence?.lastSeen && formatLastSeen(presence.lastSeen),
@@ -407,7 +409,7 @@ function InfoContent({ conv }) {
                 .join(' · ')}
         </p>
         <div className="info-actions">
-          {!isGroup && (
+          {!isGroup && peer && (
             <>
               <button onClick={() => startCall(conv.id, peer, 'audio')}>
                 <Phone size={20} />

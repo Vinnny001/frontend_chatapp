@@ -4,7 +4,7 @@ import Avatar from '../common/Avatar.jsx';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
 import { formatListTime } from '../../lib/format.js';
-import { conversationTitle, messageStatus, peerOf, previewText, useChat, isOnlineSelector } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, isSelfChat, messageStatus, peerOf, previewText, useChat, isOnlineSelector } from '../../store/chat.js';
 
 function ConversationItem({ conv, me, active }) {
   const typing = useChat((s) => s.typing[conv.id]);
@@ -49,7 +49,7 @@ function ConversationItem({ conv, me, active }) {
       </>
     );
   } else {
-    preview = <span className="muted-italic">{conv.type === 'group' ? 'Group created' : 'Say hi 👋'}</span>;
+    preview = <span className="muted-italic">{conv.type === 'group' ? 'Group created' : isSelfChat(conv, me) ? 'Message yourself' : 'Say hi 👋'}</span>;
   }
 
   const menuItems = [
@@ -70,7 +70,7 @@ function ConversationItem({ conv, me, active }) {
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && openConversation(conv.id)}
       >
-        <Avatar name={title} url={conv.type === 'group' ? conv.avatarUrl : peer?.avatarUrl} online={online} group={conv.type === 'group'} size={50} />
+        <Avatar name={title} url={chatAvatarUrl(conv, me)} online={online} group={conv.type === 'group'} size={50} />
         <div className="conv-body">
           <div className="conv-top">
             <span className="conv-title">{title}</span>
