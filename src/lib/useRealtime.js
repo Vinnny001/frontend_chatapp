@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Network } from '@capacitor/network';
-import { connectSocket, disconnectSocket } from './socket.js';
+import { connectSocket, disconnectSocket, setAppActive } from './socket.js';
 import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
 import { closeLocalDb, openLocalDb } from './localdb.js';
@@ -142,6 +142,7 @@ export function useRealtime(token) {
     // 5) App lifecycle (Capacitor): leaving → save + hand queued messages to the background
     //    sender; coming back → send whatever is still queued.
     const appHandle = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      setAppActive(isActive);
       if (!isActive) {
         saveNow();
         useChat.getState().queueAllInBackground();
@@ -156,6 +157,7 @@ export function useRealtime(token) {
     cleanups.push(() => appHandle.then((h) => h.remove()).catch(() => {}));
 
     const onVisible = () => {
+      setAppActive(document.visibilityState === 'visible');
       if (document.visibilityState !== 'visible') return;
       const { activeId, markRead } = useChat.getState();
       if (activeId) markRead(activeId);

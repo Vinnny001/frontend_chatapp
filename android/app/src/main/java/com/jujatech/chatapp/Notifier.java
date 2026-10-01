@@ -73,6 +73,7 @@ final class Notifier {
             case "message":
                 keepForApp(context, data);
                 if (!Session.foreground) showMessage(context, data);
+                reportDelivered(context, data); // after showing it, so a slow network never delays it
                 break;
             case "read":
                 clearConversation(context, data.get("conversationId"));
@@ -163,6 +164,25 @@ final class Notifier {
             edit.apply();
         } catch (Exception ignored) {
             // the app fetches it from the server instead
+        }
+    }
+
+    /**
+     * Tells the server this phone has the message, so the sender sees two ticks even though
+     * ChatApp isn't open (runs on the push service's background thread).
+     */
+    private static void reportDelivered(Context context, Map<String, String> d) {
+        String token = Session.token(context);
+        String conversationId = d.get("conversationId");
+        if (token == null || conversationId == null) return;
+        try {
+            java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US);
+            iso.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            String upTo = iso.format(new java.util.Date(parseLong(d.get("sentAt"), System.currentTimeMillis())));
+            Session.postJson(Session.apiUrl(context) + "/api/conversations/" + conversationId + "/delivered", token,
+                new JSONObject().put("upTo", upTo).toString());
+        } catch (Exception ignored) {
+            // the app reports it when it next connects
         }
     }
 

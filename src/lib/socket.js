@@ -3,10 +3,20 @@ import { REALTIME_URL } from './config.js';
 
 let socket = null;
 
+let appActive = typeof document === 'undefined' || document.visibilityState === 'visible';
+
+/** The app came on screen / went to the background: others see "online" / "last seen". */
+export function setAppActive(active) {
+  if (active === appActive) return;
+  appActive = active;
+  if (socket?.connected) socket.emit('presence:state', { active }, () => {});
+}
+
 export function connectSocket(token) {
   socket?.disconnect();
   socket = io(REALTIME_URL, {
-    auth: { token },
+    // Sent on every (re)connect: whether the app is on screen ("online" means open, as on WhatsApp).
+    auth: (cb) => cb({ token, active: appActive }),
     transports: ['websocket', 'polling'],
     reconnectionDelay: 500,
     reconnectionDelayMax: 5000,
