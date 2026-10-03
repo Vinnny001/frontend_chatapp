@@ -15,6 +15,7 @@ import MediaViewer from './components/common/MediaViewer.jsx';
 import ForwardDialog from './components/chat/ForwardDialog.jsx';
 import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
+import InAppBanner from './components/common/InAppBanner.jsx';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
 
@@ -88,6 +89,7 @@ function Messenger({ token }) {
       <MediaViewer />
       <ForwardDialog />
       <PhoneMenu />
+      <InAppBanner />
     </div>
   );
 }

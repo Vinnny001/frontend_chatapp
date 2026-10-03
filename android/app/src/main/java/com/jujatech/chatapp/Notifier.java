@@ -251,7 +251,7 @@ final class Notifier {
                 .put("senderId", d.get("senderId"))
                 .put("name", Session.nameFor(context, d.get("senderId"), d.get("senderName")))
                 .put("avatar", d.get("senderAvatar"))
-                .put("text", d.get("text"))
+                .put("text", reactionText(context, d))
                 .put("at", parseLong(d.get("sentAt"), System.currentTimeMillis())));
             chat.put("messages", kept);
             saveChat(context, conversationId, chat);
@@ -259,6 +259,13 @@ final class Notifier {
         } catch (Exception ignored) {
             // never crash the push service
         }
+    }
+
+    /** "Grace reacted 🔥 to: “See you at 6”", with the name I saved the person under. */
+    private static String reactionText(Context context, Map<String, String> d) {
+        if (d.get("emoji") == null || d.get("preview") == null) return d.get("text");
+        String name = Session.nameFor(context, d.get("senderId"), d.get("senderName"));
+        return name + " reacted " + d.get("emoji") + " to: “" + d.get("preview") + "”";
     }
 
     /** The reaction was removed: take it out of the notification (or remove the notification). */

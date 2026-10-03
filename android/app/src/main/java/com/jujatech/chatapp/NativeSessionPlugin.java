@@ -89,6 +89,24 @@ public class NativeSessionPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void startRingback(PluginCall call) {
+        Ringer.startRingback();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopRingback(PluginCall call) {
+        Ringer.stopRingback();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void playEndTone(PluginCall call) {
+        Ringer.endTone();
+        call.resolve();
+    }
+
+    @PluginMethod
     public void stopRinging(PluginCall call) {
         Ringer.stop();
         call.resolve();

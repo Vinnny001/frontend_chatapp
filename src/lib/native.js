@@ -50,6 +50,11 @@ export async function takeReceivedMessages() {
 export const startNativeRinging = () => available() && quiet(NativeSession.startRinging());
 export const stopNativeRinging = () => available() && quiet(NativeSession.stopRinging());
 
+/** Caller side: the phone's ringing tone while waiting, and the busy tone when it doesn't connect. */
+export const startNativeRingback = () => available() && quiet(NativeSession.startRingback());
+export const stopNativeRingback = () => available() && quiet(NativeSession.stopRingback());
+export const playNativeEndTone = () => available() && quiet(NativeSession.playEndTone());
+
 /** A call answered on the lock screen: the call-only screen is up, uncover it. */
 export const nativeCallScreenShown = () => available() && quiet(NativeSession.callScreenShown());
 

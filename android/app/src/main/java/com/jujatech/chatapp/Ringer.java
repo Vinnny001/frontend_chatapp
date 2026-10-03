@@ -5,6 +5,9 @@ import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
+import android.media.ToneGenerator;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -21,6 +24,7 @@ final class Ringer {
     private static final long[] PATTERN = { 0, 1000, 1000 };
     private static Ringtone ringtone;
     private static Vibrator vibrator;
+    private static ToneGenerator ringback;
 
     private Ringer() {}
 
@@ -66,6 +70,36 @@ final class Ringer {
         if (vibrator != null) {
             vibrator.cancel();
             vibrator = null;
+        }
+    }
+
+    /** Caller side: the phone's standard "ringing" tone while waiting for the other person. */
+    static synchronized void startRingback() {
+        stopRingback();
+        try {
+            ringback = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, 70);
+            ringback.startTone(ToneGenerator.TONE_SUP_RINGTONE);
+        } catch (RuntimeException e) {
+            ringback = null; // no tone generator on this device
+        }
+    }
+
+    static synchronized void stopRingback() {
+        if (ringback == null) return;
+        ringback.stopTone();
+        ringback.release();
+        ringback = null;
+    }
+
+    /** Caller side: the busy tone (declined, busy, no answer) for about two seconds. */
+    static void endTone() {
+        stopRingback();
+        try {
+            ToneGenerator tone = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, 70);
+            tone.startTone(ToneGenerator.TONE_SUP_BUSY, 2000);
+            new Handler(Looper.getMainLooper()).postDelayed(tone::release, 2500);
+        } catch (RuntimeException e) {
+            android.util.Log.w("ChatAppRinger", "busy tone failed", e);
         }
     }
 

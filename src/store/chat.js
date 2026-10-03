@@ -776,10 +776,13 @@ export const useChat = create((set, get) => {
       const conv = get().conversations[convId];
       if (quiet || !conv || conv.me?.muted || isViewing(convId) || !counts) return; // already notified
       if (useUI.getState().sounds) playIncoming();
+      const sender = conv.participants.find((p) => p.id === msg.sender);
+      const title = conv.type === 'group' ? `${sender?.name || 'Someone'} @ ${conv.name}` : sender?.name || 'New message';
       if (document.visibilityState !== 'visible') {
-        const sender = conv.participants.find((p) => p.id === msg.sender);
-        const title = conv.type === 'group' ? `${sender?.name || 'Someone'} @ ${conv.name}` : sender?.name || 'New message';
         showNotification(title, previewText(msg), () => get().openConversation(convId));
+      } else {
+        // In the app but in another chat: a banner at the top, like WhatsApp.
+        useUI.getState().showBanner({ title, text: previewText(msg), avatarUrl: chatAvatarUrl(conv), conversationId: convId });
       }
     },
 
@@ -800,9 +803,12 @@ export const useChat = create((set, get) => {
       const author = lastReaction.author ?? before?.sender;
       if (author !== me || !conv || conv.me?.muted || isViewing(conversationId)) return;
       if (useUI.getState().sounds) playIncoming();
+      const who = conv.participants.find((p) => p.id === lastReaction.user)?.name || 'Someone';
+      const text = `${who} reacted ${lastReaction.emoji} to: “${lastReaction.preview}”`;
       if (document.visibilityState !== 'visible') {
-        const who = conv.participants.find((p) => p.id === lastReaction.user)?.name || 'Someone';
-        showNotification(who, `Reacted ${lastReaction.emoji} to: “${lastReaction.preview}”`, () => get().openConversation(conversationId));
+        showNotification(conversationTitle(conv, me), text, () => get().openConversation(conversationId));
+      } else {
+        useUI.getState().showBanner({ title: conversationTitle(conv, me), text, avatarUrl: chatAvatarUrl(conv, me), conversationId });
       }
     },
 

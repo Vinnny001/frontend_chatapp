@@ -39,6 +39,9 @@ export const useUI = create((set, get) => ({
   forwarding: null, // message being forwarded
   phoneMenu: null, // { x, y, phone } for a tapped phone number in a message
   toasts: [],
+  // In-app notification at the top of the screen (a message or reaction from another chat):
+  // { id, title, text, avatarUrl, conversationId }
+  banner: null,
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -52,6 +55,13 @@ export const useUI = create((set, get) => ({
   setForwarding: (forwarding) => set({ forwarding }),
   openPhoneMenu: (phoneMenu) => set({ phoneMenu }),
   closePhoneMenu: () => set({ phoneMenu: null }),
+
+  showBanner(banner) {
+    const id = ++toastId;
+    set({ banner: { ...banner, id } });
+    setTimeout(() => get().banner?.id === id && set({ banner: null }), 4500);
+  },
+  hideBanner: () => set({ banner: null }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;

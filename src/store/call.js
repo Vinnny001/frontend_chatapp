@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { ICE_SERVERS } from '../lib/config.js';
 import { emitAck } from '../lib/socket.js';
 import { uid } from '../lib/format.js';
-import { startRingtone, stopRingtone } from '../lib/notify.js';
+import { playEndTone, startRingback, startRingtone, stopRingback, stopRingtone } from '../lib/notify.js';
 import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/native.js';
 import { displayName } from './people.js';
 import { toast } from './ui.js';
@@ -57,6 +57,7 @@ async function flushCandidates() {
 function cleanup() {
   clearTimeout(ringTimeout);
   stopRingtone();
+  stopRingback();
   const { call } = useCall.getState();
   clearCallNotification(call?.id);
   call?.localStream?.getTracks().forEach((t) => t.stop());
@@ -86,9 +87,14 @@ export const useCall = create((set, get) => ({
       const localStream = await getMedia(kind);
       if (get().call?.id !== id) return localStream.getTracks().forEach((t) => t.stop());
       get().patch({ localStream });
+      startRingback(); // you hear it ringing while you wait
       const { reachable } = await emitAck('call:invite', { callId: id, conversationId, toUserId: peer.id, kind });
       get().patch({ reachable });
-      ringTimeout = setTimeout(() => get().call?.state === 'ringing' && get().hangup('No answer'), RING_TIMEOUT_MS);
+      ringTimeout = setTimeout(() => {
+        if (get().call?.state !== 'ringing') return;
+        playEndTone();
+        get().hangup('No answer');
+      }, RING_TIMEOUT_MS);
     } catch (e) {
       get().finish(e.name === 'NotAllowedError' ? 'Microphone/camera permission denied' : e.message);
     }
@@ -228,6 +234,7 @@ export const useCall = create((set, get) => ({
     const { call } = get();
     if (call?.id !== callId || !call.localStream) return;
     clearTimeout(ringTimeout);
+    stopRingback(); // answered
     get().patch({ state: 'connecting' });
     createPeer(call.localStream);
     const offer = await pc.createOffer();
@@ -236,7 +243,9 @@ export const useCall = create((set, get) => ({
   },
 
   onRejected({ callId, reason }) {
-    if (get().call?.id !== callId) return;
+    const { call } = get();
+    if (call?.id !== callId || call.state === 'ended') return;
+    playEndTone(); // declined / busy / no answer
     get().finish({ busy: 'User is busy', 'no-answer': 'No answer' }[reason] || 'Call declined');
   },
 

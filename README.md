@@ -45,6 +45,8 @@ The `android/` project is committed, and its microphone, camera and contacts per
 ## Usernames, contacts and privacy
 
 - **Reactions** work like WhatsApp: one per person (a new emoji replaces yours, the same one again removes it), shown instantly, sent even when the live connection is down. The author gets a notification ("Reacted 👍 to: …"), which is removed if the reaction is taken back. The chat list shows the latest reaction, and tapping the reactions under a message shows who reacted.
+- **In-app alerts**: a message or reaction from another chat shows a banner at the top ("Grace reacted 🔥 to: …"); tap it to open the chat. Reaction notifications name who reacted, using the name you saved them under.
+- **Calling someone**: you hear the phone's ringing tone while waiting, and a busy tone if they decline, are busy or don't answer.
 - **APK files** (Android apps) can be sent like documents, up to 50 MB. Tapping one opens the Android installer; the first time, Android asks to allow installs from ChatApp.
 
 - Contacts sync by themselves: when the app starts, when it comes back to the foreground (if the last sync is over 10 minutes old) and when New chat opens.

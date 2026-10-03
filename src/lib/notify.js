@@ -1,4 +1,11 @@
-import { isNativeApp, startNativeRinging, stopNativeRinging } from './native.js';
+import {
+  isNativeApp,
+  playNativeEndTone,
+  startNativeRingback,
+  startNativeRinging,
+  stopNativeRingback,
+  stopNativeRinging,
+} from './native.js';
 
 let audioCtx = null;
 
@@ -45,6 +52,55 @@ export function stopRingtone() {
   clearInterval(ringTimer);
   ringTimer = null;
   stopNativeRinging();
+}
+
+// ---- Caller side: what you hear while waiting for the other person to answer.
+
+let ringbackTimer = null;
+
+/** Two tones together (like a phone line's ringing / busy tones). */
+function dualTone(f1, f2, seconds, volume = 0.06) {
+  try {
+    const ac = ctx();
+    const t = ac.currentTime;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(volume, t + 0.03);
+    gain.gain.setValueAtTime(volume, t + seconds - 0.05);
+    gain.gain.linearRampToValueAtTime(0, t + seconds);
+    gain.connect(ac.destination);
+    for (const f of [f1, f2]) {
+      const osc = ac.createOscillator();
+      osc.frequency.value = f;
+      osc.connect(gain);
+      osc.start(t);
+      osc.stop(t + seconds);
+    }
+  } catch {
+    /* audio not available */
+  }
+}
+
+/** "Ringing…": the ringback tone until the call is answered, declined or given up. */
+export function startRingback() {
+  stopRingback();
+  if (isNativeApp()) return startNativeRingback();
+  const ring = () => dualTone(440, 480, 2);
+  ring();
+  ringbackTimer = setInterval(ring, 6000);
+}
+
+export function stopRingback() {
+  clearInterval(ringbackTimer);
+  ringbackTimer = null;
+  stopNativeRingback();
+}
+
+/** Declined / busy / no answer: a few busy beeps. */
+export function playEndTone() {
+  stopRingback();
+  if (isNativeApp()) return playNativeEndTone();
+  [0, 0.5, 1].forEach((delay) => setTimeout(() => dualTone(480, 620, 0.25), delay * 1000));
 }
 
 export function requestNotificationPermission() {

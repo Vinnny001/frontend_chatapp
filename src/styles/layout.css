@@ -521,3 +521,50 @@
   color: #e9edef;
   font-size: 18px;
 }
+
+/* In-app notification (message or reaction from another chat) */
+.in-app-banner {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(440px, calc(100vw - 24px));
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: banner-in 0.25s var(--ease);
+}
+
+.in-app-banner-text {
+  display: grid;
+  min-width: 0;
+}
+
+.in-app-banner-text strong,
+.in-app-banner-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.in-app-banner-text span {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -16px);
+  }
+}
