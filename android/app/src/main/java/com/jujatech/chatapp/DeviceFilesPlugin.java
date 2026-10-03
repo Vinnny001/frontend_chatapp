@@ -4,6 +4,8 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
 import android.util.Base64;
 
 import androidx.core.content.FileProvider;
@@ -76,7 +78,9 @@ public class DeviceFilesPlugin extends Plugin {
         }
     }
 
-    /** Opens a saved document with whatever app handles its type (PDF viewer, Word, ...). */
+    static final String APK_MIME = "application/vnd.android.package-archive";
+
+    /** Opens a saved document with whatever app handles its type (PDF viewer, Word, installer...). */
     @PluginMethod
     public void open(PluginCall call) {
         String mime = call.getString("mime", "*/*");
@@ -84,6 +88,15 @@ public class DeviceFilesPlugin extends Plugin {
             File file = resolve(getContext(), call.getString("path"));
             if (!file.isFile()) {
                 call.reject("File not found");
+                return;
+            }
+            if (APK_MIME.equals(mime) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !getContext().getPackageManager().canRequestPackageInstalls()) {
+                // First APK: Android needs "Allow from this source" for ChatApp. Open that setting.
+                Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getActivity().startActivity(settings);
+                call.reject("Allow ChatApp to install apps (turn on \"Allow from this source\"), then tap the file again.", "INSTALL_PERMISSION");
                 return;
             }
             Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);

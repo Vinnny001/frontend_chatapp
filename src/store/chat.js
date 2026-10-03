@@ -632,11 +632,28 @@ export const useChat = create((set, get) => {
       }
     },
 
+    /**
+     * React like WhatsApp: one reaction per person; the same emoji again removes it. Shown at
+     * once, then sent (live connection, or plain HTTP when it's down).
+     */
     async react(msg, emoji) {
+      const me = meId();
+      const convId = msg.conversationId;
+      const current = get().threads[convId]?.items.find((m) => m.id === msg.id) || msg;
+      const before = current.reactions || [];
+      const mine = before.find((r) => r.user === me);
+      const next = before.filter((r) => r.user !== me);
+      if (emoji && emoji !== mine?.emoji) next.push({ user: me, emoji });
+      patchItem(convId, msg.id, { reactions: next });
       try {
-        await emitAck('message:react', { messageId: msg.id, emoji });
+        const body = { messageId: msg.id, emoji: emoji && emoji !== mine?.emoji ? emoji : null };
+        const { reactions } = isOnline()
+          ? await emitAck('message:react', body)
+          : await api(`/api/messages/${msg.id}/react`, { method: 'POST', body: { emoji: body.emoji } });
+        if (reactions) patchItem(convId, msg.id, { reactions });
       } catch (e) {
-        toast(e.message, 'error');
+        patchItem(convId, msg.id, { reactions: before }); // put it back
+        toast(isNetworkError(e) ? 'You’re offline. Try reacting again when connected.' : e.message, 'error');
       }
     },
 
@@ -767,12 +784,26 @@ export const useChat = create((set, get) => {
     },
 
     onMessageUpdated(patch) {
-      const { id, conversationId } = patch;
-      patchItem(conversationId, id, patch);
-      patchStoredMessage(patch);
-      patchConversation(conversationId, (c) =>
-        c.lastMessage?.id === id ? { lastMessage: { ...c.lastMessage, ...patch } } : {}
-      );
+      const { id, conversationId, lastReaction, ...rest } = patch;
+      const before = get().threads[conversationId]?.items.find((m) => m.id === id);
+      patchItem(conversationId, id, { id, conversationId, ...rest });
+      patchStoredMessage({ id, conversationId, ...rest });
+      patchConversation(conversationId, (c) => ({
+        ...(c.lastMessage?.id === id && { lastMessage: { ...c.lastMessage, ...rest } }),
+        // The chat list shows the latest reaction ("Ann reacted 👍 to: …"); null = taken back.
+        ...(lastReaction !== undefined && { lastReaction }),
+      }));
+      // Someone reacted to my message: a sound (and a desktop notification if the app is hidden).
+      const me = meId();
+      if (!lastReaction || lastReaction.user === me) return;
+      const conv = get().conversations[conversationId];
+      const author = lastReaction.author ?? before?.sender;
+      if (author !== me || !conv || conv.me?.muted || isViewing(conversationId)) return;
+      if (useUI.getState().sounds) playIncoming();
+      if (document.visibilityState !== 'visible') {
+        const who = conv.participants.find((p) => p.id === lastReaction.user)?.name || 'Someone';
+        showNotification(who, `Reacted ${lastReaction.emoji} to: “${lastReaction.preview}”`, () => get().openConversation(conversationId));
+      }
     },
 
     onMessageRemoved({ id, conversationId }) {
@@ -881,6 +912,14 @@ export function callSummary(msg, me = meId()) {
   }
   if (status === 'declined') return { title: Noun, detail: 'Declined', missed: false, outgoing };
   return { title: `Missed ${noun}`, detail: '', missed: true, outgoing };
+}
+
+/** "You reacted 👍 to: “hi”" when the latest thing in a chat is a reaction, else null. */
+export function reactionPreview(conv, me = meId()) {
+  const r = conv?.lastReaction;
+  if (!r || (conv.lastMessage && ts(conv.lastMessage.createdAt) > ts(r.at))) return null;
+  const who = r.user === me ? 'You' : (conv.participants.find((p) => p.id === r.user)?.name || 'Someone').split(' ')[0];
+  return `${who} reacted ${r.emoji} to: “${r.preview}”`;
 }
 
 export function previewText(msg) {

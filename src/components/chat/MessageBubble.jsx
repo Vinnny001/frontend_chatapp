@@ -18,6 +18,7 @@ import {
   Reply,
   RotateCw,
   SmilePlus,
+  Smartphone,
   Star,
   StarOff,
   Trash2,
@@ -28,6 +29,9 @@ import Menu, { useContextMenu } from '../common/Menu.jsx';
 import VoicePlayer from './VoicePlayer.jsx';
 import EmojiPicker from './EmojiPicker.jsx';
 import MessageInfo from './MessageInfo.jsx';
+import Avatar from '../common/Avatar.jsx';
+import Modal from '../common/Modal.jsx';
+import { useAuth } from '../../store/auth.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
 import { mediaKind, useMediaSrc } from '../../lib/media.js';
@@ -188,9 +192,10 @@ function DocumentCard({ media, uploadingProgress }) {
     }
   }
   const ext = (media.name?.split('.').pop() || 'file').toUpperCase();
+  const apk = ext === 'APK';
   return (
     <button type="button" className="file-card" onClick={open}>
-      <FileText size={30} />
+      {apk ? <Smartphone size={30} /> : <FileText size={30} />}
       <span className="file-info">
         <span className="file-name">{media.name || 'Document'}</span>
         <span className="file-meta">
@@ -198,7 +203,7 @@ function DocumentCard({ media, uploadingProgress }) {
             ? `Uploading ${Math.round(uploadingProgress * 100)}%`
             : opening
               ? 'Opening…'
-              : `${formatBytes(media.size)} · ${ext}`}
+              : `${formatBytes(media.size)} · ${apk ? 'Android app' : ext}`}
         </span>
       </span>
       <Download size={18} />
@@ -206,23 +211,76 @@ function DocumentCard({ media, uploadingProgress }) {
   );
 }
 
-function Reactions({ reactions, me, onToggle, conv }) {
+/** Who reacted with what, like WhatsApp's sheet: "All 3 · 👍 2 · ❤️ 1"; tap yours to remove it. */
+function ReactionDetails({ reactions, me, conv, onRemove, onClose }) {
+  const [tab, setTab] = useState('all');
+  const counts = reactions.reduce((acc, r) => ({ ...acc, [r.emoji]: (acc[r.emoji] || 0) + 1 }), {});
+  const shown = (tab === 'all' ? reactions : reactions.filter((r) => r.emoji === tab))
+    .slice()
+    .sort((a, b) => (a.user === me ? -1 : b.user === me ? 1 : 0));
+  const person = (id) => (id === me ? null : conv.participants.find((p) => p.id === id));
+  return (
+    <Modal title="Reactions" onClose={onClose} className="reaction-details">
+      <div className="reaction-tabs">
+        <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>
+          All {reactions.length}
+        </button>
+        {Object.entries(counts).map(([emoji, n]) => (
+          <button key={emoji} className={tab === emoji ? 'active' : ''} onClick={() => setTab(emoji)}>
+            {emoji} {n}
+          </button>
+        ))}
+      </div>
+      {shown.map((r) => {
+        const p = person(r.user);
+        const mine = r.user === me;
+        return (
+          <button key={r.user} className="reaction-person" disabled={!mine} onClick={() => mine && onRemove()}>
+            <Avatar name={mine ? 'You' : p?.name} url={mine ? useAuth.getState().user?.avatarUrl : p?.avatarUrl} size={40} />
+            <span className="person-info">
+              <span className="person-name">{mine ? 'You' : p?.name || 'Someone'}</span>
+              {mine && <span className="person-sub">Tap to remove</span>}
+            </span>
+            <span className="reaction-emoji">{r.emoji}</span>
+          </button>
+        );
+      })}
+    </Modal>
+  );
+}
+
+function Reactions({ reactions, me, onRemove, conv }) {
+  const [open, setOpen] = useState(false);
   const groups = reactions.reduce((acc, r) => {
     (acc[r.emoji] ||= []).push(r.user);
     return acc;
   }, {});
   const entries = Object.entries(groups);
   if (!entries.length) return null;
-  const names = (ids) => ids.map((id) => (id === me ? 'You' : conv.participants.find((p) => p.id === id)?.name || 'Someone')).join(', ');
+  const mine = reactions.some((r) => r.user === me);
   return (
-    <div className="reactions">
-      {entries.map(([emoji, users]) => (
-        <button key={emoji} className={`reaction ${users.includes(me) ? 'mine' : ''}`} onClick={() => onToggle(emoji)} title={names(users)}>
-          {emoji}
-          {users.length > 1 && <span>{users.length}</span>}
-        </button>
-      ))}
-    </div>
+    <>
+      <button className={`reactions ${mine ? 'mine' : ''}`} onClick={() => setOpen(true)} aria-label="See reactions">
+        {entries.map(([emoji]) => (
+          <span key={emoji} className="reaction">
+            {emoji}
+          </span>
+        ))}
+        {reactions.length > 1 && <span className="reaction-count">{reactions.length}</span>}
+      </button>
+      {open && (
+        <ReactionDetails
+          reactions={reactions}
+          me={me}
+          conv={conv}
+          onRemove={() => {
+            onRemove();
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -440,7 +498,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             <RotateCw size={13} /> Not sent. Tap to retry
           </button>
         )}
-        <Reactions reactions={msg.reactions || []} me={me} conv={conv} onToggle={react} />
+        <Reactions reactions={msg.reactions || []} me={me} conv={conv} onRemove={() => chat.react(msg, null)} />
         {picker === 'quick' && (
           <div className="quick-reactions" onMouseLeave={() => setPicker(null)}>
             {QUICK_REACTIONS.map((e) => (

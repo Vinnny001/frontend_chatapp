@@ -4,7 +4,7 @@ import Avatar from '../common/Avatar.jsx';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
 import { formatListTime } from '../../lib/format.js';
-import { chatAvatarUrl, conversationTitle, isSelfChat, messageStatus, peerOf, previewText, useChat, isOnlineSelector } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, isSelfChat, messageStatus, peerOf, previewText, reactionPreview, useChat, isOnlineSelector } from '../../store/chat.js';
 
 function ConversationItem({ conv, me, active }) {
   const typing = useChat((s) => s.typing[conv.id]);
@@ -31,6 +31,8 @@ function ConversationItem({ conv, me, active }) {
         {draft}
       </span>
     );
+  } else if (reactionPreview(conv, me)) {
+    preview = <span>{reactionPreview(conv, me)}</span>;
   } else if (last) {
     const mine = last.sender === me;
     const senderName =

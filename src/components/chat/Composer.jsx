@@ -203,7 +203,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   function sendFiles(list, caption) {
     list.forEach((file, i) => {
       const kind = fileKind(file);
-      if (file.size > 25 * 1024 * 1024) return toast(`${file.name} is larger than 25 MB`, 'error');
+      if (file.size > 50 * 1024 * 1024) return toast(`${file.name} is larger than 50 MB`, 'error');
       sendMedia(conv.id, file, { type: kind, text: i === 0 ? caption : '', replyTo: i === 0 ? replyTo : null });
     });
     setComposer(conv.id, { replyTo: null });

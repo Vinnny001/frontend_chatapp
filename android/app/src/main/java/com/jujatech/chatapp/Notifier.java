@@ -78,6 +78,12 @@ final class Notifier {
             case "read":
                 clearConversation(context, data.get("conversationId"));
                 break;
+            case "reaction":
+                if (!Session.foreground) showReaction(context, data);
+                break;
+            case "reaction_removed":
+                removeReaction(context, data);
+                break;
             case "call":
                 if (!Session.foreground) showIncomingCall(context, data);
                 break;
@@ -227,6 +233,65 @@ final class Notifier {
         } catch (Exception ignored) {
             // a broken notification must never crash the push service
         }
+    }
+
+    /** "Reacted 👍 to: …" in the chat's notification; a changed reaction replaces the old one. */
+    private static void showReaction(Context context, Map<String, String> d) {
+        String conversationId = d.get("conversationId");
+        if (conversationId == null) return;
+        try {
+            JSONObject chat = loadChat(context, conversationId);
+            boolean isGroup = "1".equals(d.get("isGroup"));
+            String title = isGroup ? d.get("chatTitle") : Session.nameFor(context, d.get("senderId"), d.get("chatTitle"));
+            chat.put("title", title).put("isGroup", isGroup).put("avatar", d.get("chatAvatar"));
+            String id = "react:" + d.get("messageId") + ":" + d.get("senderId");
+            JSONArray kept = withoutId(chat.getJSONArray("messages"), id);
+            kept.put(new JSONObject()
+                .put("id", id)
+                .put("senderId", d.get("senderId"))
+                .put("name", Session.nameFor(context, d.get("senderId"), d.get("senderName")))
+                .put("avatar", d.get("senderAvatar"))
+                .put("text", d.get("text"))
+                .put("at", parseLong(d.get("sentAt"), System.currentTimeMillis())));
+            chat.put("messages", kept);
+            saveChat(context, conversationId, chat);
+            postChat(context, conversationId, chat, false);
+        } catch (Exception ignored) {
+            // never crash the push service
+        }
+    }
+
+    /** The reaction was removed: take it out of the notification (or remove the notification). */
+    private static void removeReaction(Context context, Map<String, String> d) {
+        String conversationId = d.get("conversationId");
+        if (conversationId == null) return;
+        try {
+            JSONObject chat = loadChat(context, conversationId);
+            JSONArray messages = chat.getJSONArray("messages");
+            JSONArray kept = withoutId(messages, "react:" + d.get("messageId") + ":" + d.get("senderId"));
+            if (kept.length() == messages.length()) return; // nothing shown for it
+            boolean othersLeft = false;
+            for (int i = 0; i < kept.length(); i++) {
+                if (!"me".equals(kept.getJSONObject(i).optString("senderId"))) othersLeft = true;
+            }
+            if (!othersLeft) {
+                clearConversation(context, conversationId);
+                return;
+            }
+            chat.put("messages", kept);
+            saveChat(context, conversationId, chat);
+            postChat(context, conversationId, chat, true);
+        } catch (Exception ignored) {
+            // nothing to update
+        }
+    }
+
+    private static JSONArray withoutId(JSONArray messages, String id) throws Exception {
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < messages.length(); i++) {
+            if (!id.equals(messages.getJSONObject(i).optString("id"))) out.put(messages.get(i));
+        }
+        return out;
     }
 
     /** Adds my reply (from the notification's Reply box) to the chat's notification, silently. */
