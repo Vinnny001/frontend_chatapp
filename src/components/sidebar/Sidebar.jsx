@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Archive, LogOut, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, Images, LogOut, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
+import SidePanel from './SidePanel.jsx';
+import SharedBrowser from '../common/SharedBrowser.jsx';
 import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
 import ConversationItem from './ConversationItem.jsx';
@@ -19,7 +21,15 @@ const FILTERS = [
   { id: 'archived', label: 'Archived' },
 ];
 
-const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel };
+function MediaHubPanel() {
+  return (
+    <SidePanel title="Media hub">
+      <SharedBrowser />
+    </SidePanel>
+  );
+}
+
+const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel };
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);
@@ -142,6 +152,7 @@ export default function Sidebar() {
           onClose={() => setMenu(null)}
           items={[
             { label: 'New group', icon: Users, onClick: () => openPanel('newGroup') },
+            { label: 'Media hub', icon: Images, onClick: () => openPanel('hub') },
             { label: 'Calls', icon: Phone, onClick: () => openPanel('calls') },
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },

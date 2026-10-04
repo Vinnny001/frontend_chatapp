@@ -15,11 +15,13 @@ import {
 } from '../lib/localdb.js';
 import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
 import { connectionKind } from '../lib/network.js';
+import { storage } from '../lib/storage.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { clearChatNotifications, setNativeNames, takeReceivedMessages } from '../lib/native.js';
 import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
 import { useAuth } from './auth.js';
+import { useCall } from './call.js';
 import { toast, useUI } from './ui.js';
 
 const meId = () => useAuth.getState().user?.id;
@@ -40,6 +42,13 @@ const authToken = () => useAuth.getState().token;
 const isNetworkError = (e) => e?.status === 0 || /respond|connect|network|fetch/i.test(e?.message || '');
 
 const PAGE = 40;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let syncRun = 0; // a newer background sync replaces an older one
+
+// Per chat: up to which message time this device has the complete history (background sync).
+const syncedKey = () => `chat.synced.${meId()}`;
+const syncedUpTo = () => storage.get(syncedKey()) || {};
+const markSynced = (convId, at) => storage.set(syncedKey(), { ...syncedUpTo(), [convId]: at });
 
 /** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
 const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
@@ -226,6 +235,62 @@ export const useChat = create((set, get) => {
       // Latest message of every chat + profile/group photos, so the list works offline too.
       keepOffline(conversations.map((c) => c.lastMessage).filter(Boolean));
       prefetchMedia(conversations.flatMap((c) => [c.avatarUrl, ...c.participants.map((p) => p.avatarUrl)]));
+      get().backgroundSync(); // not awaited: runs quietly in the background
+    },
+
+    /**
+     * Brings the messages saved on this device up to date for every chat, including chats
+     * never opened (e.g. on a new phone), so they're there offline later. Runs one request at
+     * a time, newest chats first, and steps aside while you send, open a chat or are on a call.
+     */
+    async backgroundSync() {
+      const run = ++syncRun;
+      const current = () => run === syncRun && isOnline();
+      const busy = () =>
+        inFlight.size > 0 ||
+        Object.values(get().threads).some((t) => t.loading) ||
+        !!useCall.getState().call;
+      const chats = Object.values(get().conversations)
+        .filter((c) => c.lastMessage)
+        .sort((a, b) => ts(b.lastMessageAt) - ts(a.lastMessageAt));
+      for (const c of chats) {
+        if (!current()) return;
+        const synced = syncedUpTo()[c.id];
+        if (synced && ts(synced) >= ts(c.lastMessage.createdAt)) continue; // up to date
+        let before;
+        let complete = false;
+        // Catch up to where the last sync stopped (up to 10 pages); a chat new to this device
+        // gets its latest page (scrolling back loads more).
+        for (let page = 0; page < (synced ? 10 : 1); page++) {
+          while (busy() && current()) await sleep(700);
+          if (!current()) return;
+          const q = new URLSearchParams({ limit: '50' });
+          if (before) q.set('before', before);
+          let data;
+          try {
+            data = await api(`/api/conversations/${c.id}/messages?${q}`);
+          } catch {
+            return; // offline or server trouble: the next reconnect tries again
+          }
+          const { messages, hasMore } = data;
+          if (!messages.length) {
+            complete = true;
+            break;
+          }
+          keepOffline(messages);
+          // A chat already loaded on screen gets refreshed when it's next opened.
+          patchThread(c.id, (t) => (t.loaded && get().activeId !== c.id ? { stale: true } : {}));
+          const caughtUp = synced && ts(messages[0].createdAt) <= ts(synced);
+          if (!hasMore || caughtUp || !synced) {
+            complete = true;
+            break;
+          }
+          before = messages[0].createdAt;
+          await sleep(250);
+        }
+        if (complete) markSynced(c.id, c.lastMessage.createdAt);
+        await sleep(300);
+      }
     },
 
     /** After a reconnect: refresh the list and the open chat, drop other cached threads. */
@@ -752,6 +817,11 @@ export const useChat = create((set, get) => {
         keepOffline([msg]);
         if (get().threads[convId]?.loaded) addItems(convId, [msg]);
       }
+
+      // Arrived live right after what was already synced: still complete, no refetch needed.
+      const synced = syncedUpTo()[convId];
+      const previous = get().conversations[convId]?.lastMessageAt;
+      if (synced && previous && ts(synced) >= ts(previous) && ts(msg.createdAt) > ts(synced)) markSynced(convId, msg.createdAt);
 
       const mine = msg.sender === me;
       // Calls I answered or declined are logged in the chat but aren't "unread"; missed ones are.

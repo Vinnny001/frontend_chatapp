@@ -4,7 +4,10 @@ import { pendingKey } from './media.js';
 // Offline copy of the chat list, recent messages, unsent messages and drafts, so the app
 // opens with your chats (and keeps queued messages) without a network connection.
 
-const MAX_CONVERSATIONS = 40;
+// The whole chat list is kept (so every chat is there offline); recent messages only for the
+// most recent chats: the rest of the history is in IndexedDB (localdb.js).
+const MAX_CONVERSATIONS = 1000;
+const MAX_THREADS = 40;
 const MAX_MESSAGES = 60;
 const key = (userId) => `chat.cache.v1.${userId}`;
 
@@ -19,7 +22,7 @@ export function saveCache(userId, { conversations, threads, composer }) {
     .slice(0, MAX_CONVERSATIONS);
 
   const savedThreads = {};
-  for (const c of convs) {
+  for (const c of convs.slice(0, MAX_THREADS)) {
     const items = (threads[c.id]?.items || [])
       .slice(-MAX_MESSAGES)
       .map(({ progress, error, ...m }) => {
@@ -42,5 +45,7 @@ export function saveCache(userId, { conversations, threads, composer }) {
 }
 
 export function clearCache(userId) {
-  if (userId) storage.set(key(userId), null);
+  if (!userId) return;
+  storage.set(key(userId), null);
+  storage.set(`chat.synced.${userId}`, null); // background-sync progress
 }

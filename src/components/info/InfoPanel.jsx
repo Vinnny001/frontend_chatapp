@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
 import Modal from '../common/Modal.jsx';
 import SearchPanel from './SearchPanel.jsx';
+import SharedBrowser from '../common/SharedBrowser.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
@@ -33,44 +34,46 @@ function GridThumb({ message: m }) {
   return m.type === 'image' ? <img src={src} alt="" loading="lazy" /> : <video src={`${src}#t=0.1`} preload="metadata" muted />;
 }
 
+/** A few recent photos/videos; the rest (and docs, links, apps, favourites) under "View all". */
 function MediaGrid({ convId }) {
-  const [items, setItems] = useState(null);
+  const [state, setState] = useState(null); // { items, total }
   const lastMessageAt = useChat((s) => s.conversations[convId]?.lastMessageAt);
   const openViewer = useUI((s) => s.openViewer);
+  const setInfoOpen = useUI((s) => s.setInfoOpen);
 
   useEffect(() => {
-    api(`/api/conversations/${convId}/media`)
-      .then((d) => setItems(d.messages))
-      // Offline: build the gallery from the messages saved on the device.
+    api(`/api/conversations/shared?kind=media&limit=6&counts=1&conversationId=${convId}`)
+      .then((d) => setState({ items: d.items, total: d.counts?.all ?? d.items.length }))
+      // Offline: from the messages saved on the device.
       .catch(() =>
         readMessages(convId, { limit: 2000 })
-          .then((all) => setItems(all.filter((m) => m.media && !m.deletedForEveryone).reverse()))
-          .catch(() => setItems([]))
+          .then((all) => {
+            const shared = all.filter((m) => !m.deletedForEveryone && (m.media || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
+            const visual = shared.filter((m) => m.type === 'image' || m.type === 'video').reverse();
+            setState({ items: visual.slice(0, 6), total: shared.length });
+          })
+          .catch(() => setState({ items: [], total: 0 }))
       );
   }, [convId, lastMessageAt]);
 
-  if (!items?.length) return null;
-  const visual = items.filter((m) => m.type === 'image' || m.type === 'video');
-  const docs = items.filter((m) => m.type === 'file' || m.type === 'audio');
-
+  if (!state?.total) return null;
   return (
     <section className="info-card">
-      <h3 className="section-label">Media, docs & files</h3>
-      {visual.length > 0 && (
-        <div className="media-grid">
-          {visual.slice(0, 12).map((m) => (
+      <button className="section-link" onClick={() => setInfoOpen('media')}>
+        <span>Media, links and docs</span>
+        <span className="section-link-count">
+          {state.total} <ChevronRight size={18} />
+        </span>
+      </button>
+      {state.items.length > 0 && (
+        <div className="media-grid compact">
+          {state.items.map((m) => (
             <button key={m.id} onClick={() => openViewer({ url: m.media.url, type: m.type, name: m.media.name })}>
               <GridThumb message={m} />
             </button>
           ))}
         </div>
       )}
-      {docs.slice(0, 6).map((m) => (
-        <button key={m.id} type="button" className="doc-row" onClick={() => openDocument(m.media).catch((e) => toast(e.message, 'error'))}>
-          <FileText size={20} />
-          <span>{m.media.name}</span>
-        </button>
-      ))}
     </section>
   );
 }
@@ -553,9 +556,24 @@ export default function InfoPanel({ convId }) {
         <button className="icon-btn" onClick={() => setInfoOpen(false)} aria-label="Close">
           <X size={22} />
         </button>
-        <h2>{mode === 'search' ? 'Search messages' : conv.type === 'group' ? 'Group info' : 'Contact info'}</h2>
+        {mode === 'media' && (
+          <button className="icon-btn" onClick={() => setInfoOpen('info')} aria-label="Back to info">
+            <ArrowLeft size={20} />
+          </button>
+        )}
+        <h2>
+          {mode === 'search' ? 'Search messages' : mode === 'media' ? 'Media, links and docs' : conv.type === 'group' ? 'Group info' : 'Contact info'}
+        </h2>
       </header>
-      <div className="info-body">{mode === 'search' ? <SearchPanel conv={conv} /> : <InfoContent key={conv.id} conv={conv} />}</div>
+      <div className="info-body">
+        {mode === 'search' ? (
+          <SearchPanel conv={conv} />
+        ) : mode === 'media' ? (
+          <SharedBrowser key={conv.id} conversationId={conv.id} />
+        ) : (
+          <InfoContent key={conv.id} conv={conv} />
+        )}
+      </div>
     </aside>
   );
 }
