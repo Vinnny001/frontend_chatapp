@@ -3,6 +3,8 @@ import { Camera, Check, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Sm
 import EmojiPicker from './EmojiPicker.jsx';
 import AttachmentPreview from './AttachmentPreview.jsx';
 import Menu from '../common/Menu.jsx';
+import Avatar from '../common/Avatar.jsx';
+import { MENTION_TOKEN, atName, mentionName, mentionToken, plainMentions } from '../../lib/mentions.js';
 import { fileKind, formatDuration } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { canSendIn, useChat } from '../../store/chat.js';
@@ -84,6 +86,10 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   const input = useRef(null);
   const fileInputs = { media: useRef(null), doc: useRef(null), camera: useRef(null) };
   const typing = useRef({ last: 0, idle: null });
+  // @mentions: the "@Name" shown in the box -> the token that is sent.
+  const mentioned = useRef(new Map());
+  const [mention, setMention] = useState(null); // { start, end, q } while typing "@…"
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   const { replyTo, editing } = state;
 
@@ -113,7 +119,13 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   // Load the message being edited into the input.
   useEffect(() => {
     if (editing) {
-      setText(editing.text);
+      setText(
+        editing.text.replace(MENTION_TOKEN, (token, label, id) => {
+          const shown = mentionName(conv, id, label, me);
+          mentioned.current.set(shown, token);
+          return shown;
+        })
+      );
       input.current?.focus();
     }
   }, [editing]);
@@ -153,8 +165,42 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     else setTyping('stop');
   }
 
+  // "@Name" back to tokens, longest names first so "@Ann" can't eat part of "@Ann Lee".
+  function withTokens(value) {
+    const pairs = [...mentioned.current].sort((a, b) => b[0].length - a[0].length);
+    const out = pairs.reduce((s, [shown, token]) => s.split(shown).join(token), value);
+    mentioned.current = new Map();
+    return out;
+  }
+
+  const members = conv.type === 'group' ? conv.participants.filter((p) => p.id !== me) : [];
+  const candidates = mention
+    ? members
+        .filter((p) => [p.name, p.username, p.phone].some((v) => v?.toLowerCase().includes(mention.q)))
+        .slice(0, 8)
+    : [];
+
+  function findMention(value, caret) {
+    const m = members.length && /(^|\s)@([^\s@]{0,30})$/.exec(value.slice(0, caret));
+    setMention(m ? { start: caret - m[2].length - 1, end: caret, q: m[2].toLowerCase() } : null);
+    setMentionIndex(0);
+  }
+
+  function pickMention(p) {
+    const shown = atName(p.name);
+    mentioned.current.set(shown, mentionToken(p));
+    const next = `${text.slice(0, mention.start)}${shown} ${text.slice(mention.end)}`;
+    const caret = mention.start + shown.length + 1;
+    updateText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(caret, caret);
+    });
+  }
+
   function submit() {
-    const body = text.trim();
+    const body = withTokens(text.trim());
     if (!body) return;
     if (editing) {
       if (body !== editing.text) editMessage(editing, body);
@@ -170,6 +216,18 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   }
 
   function onKeyDown(e) {
+    if (candidates.length) {
+      const move = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+      if (move) {
+        e.preventDefault();
+        return setMentionIndex((i) => (i + move + candidates.length) % candidates.length);
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        return pickMention(candidates[mentionIndex] || candidates[0]);
+      }
+      if (e.key === 'Escape') return setMention(null);
+    }
     if (e.key === 'Enter' && !e.shiftKey && enterToSend && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -241,7 +299,11 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           {editing ? <Pencil size={18} /> : <Reply size={18} />}
           <div className="composer-context-body">
             <strong>{editing ? 'Edit message' : `Replying to ${who}`}</strong>
-            <span>{(editing || replyTo).text || (editing || replyTo).media?.name || 'Media'}</span>
+            <span>
+              {plainMentions((editing || replyTo).text, conv, me) ||
+                (editing || replyTo).media?.name ||
+                'Media'}
+            </span>
           </div>
           <button
             className="icon-btn"
@@ -253,6 +315,25 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           >
             <X size={18} />
           </button>
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <div className="mention-picker" role="listbox" aria-label="Mention someone">
+          {candidates.map((p, i) => (
+            <button
+              key={p.id}
+              role="option"
+              aria-selected={i === mentionIndex}
+              className={i === mentionIndex ? 'active' : ''}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pickMention(p)}
+            >
+              <Avatar name={p.name} url={p.avatarUrl} size={32} />
+              <span className="mention-name">{p.name}</span>
+              {p.username && p.name !== `@${p.username}` && <span className="mention-sub">@{p.username}</span>}
+            </button>
+          ))}
         </div>
       )}
 
@@ -294,7 +375,11 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
               rows={1}
               value={text}
               placeholder="Type a message"
-              onChange={(e) => updateText(e.target.value)}
+              onChange={(e) => {
+                updateText(e.target.value);
+                findMention(e.target.value, e.target.selectionStart);
+              }}
+              onBlur={() => setTimeout(() => setMention(null), 150)}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
               maxLength={65536}

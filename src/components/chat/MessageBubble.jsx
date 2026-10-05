@@ -11,6 +11,8 @@ import {
   Info,
   Pencil,
   Phone,
+  Pin,
+  PinOff,
   PhoneIncoming,
   PhoneMissed,
   PhoneOutgoing,
@@ -37,7 +39,8 @@ import { formatBytes, formatTime, linkify } from '../../lib/format.js';
 import { mediaKind, useMediaSrc } from '../../lib/media.js';
 import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
-import { callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
+import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
+import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { useCall } from '../../store/call.js';
 import { useGroupCall } from '../../store/groupCall.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -46,7 +49,19 @@ const EDIT_WINDOW_MS = 24 * 3600 * 1000;
 const DELETE_WINDOW_MS = 48 * 3600 * 1000;
 const EMOJI_ONLY = /^(\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}‍️]|\s)+$/u;
 
-function RichText({ text }) {
+function RichText({ text, conv, me }) {
+  return splitMentions(text).flatMap((piece, j) =>
+    typeof piece === 'string' ? (
+      <Linked key={j} text={piece} />
+    ) : (
+      <span key={j} className={`mention ${piece.mention.id === me ? 'me' : ''}`}>
+        {mentionName(conv, piece.mention.id, piece.mention.label, me)}
+      </span>
+    )
+  );
+}
+
+function Linked({ text }) {
   return linkify(text).map((part, i) => {
     if (typeof part === 'string') return part;
     if (part.phone) {
@@ -76,7 +91,7 @@ function ReplyQuote({ reply, conv, me, onClick }) {
   const author = reply.sender === me ? 'You' : conv.participants.find((p) => p.id === reply.sender)?.name || 'Someone';
   const label = reply.deletedForEveryone
     ? 'This message was deleted'
-    : reply.text || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
+    : plainMentions(reply.text, conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
   return (
     <button className="reply-quote" onClick={onClick}>
       <span className="reply-body">
@@ -338,14 +353,14 @@ function CallBubble({ msg, conv, me }) {
 const LONG_TEXT = 500;
 
 /** Long messages show the first part with "Read more", like WhatsApp. */
-function LongText({ text }) {
+function LongText({ text, conv, me }) {
   const [expanded, setExpanded] = useState(false);
-  if (text.length <= LONG_TEXT || expanded) return <RichText text={text} />;
+  if (text.length <= LONG_TEXT || expanded) return <RichText text={text} conv={conv} me={me} />;
   // Cut at a word boundary so a link or phone number isn't split in half.
   const cut = text.lastIndexOf(' ', LONG_TEXT);
   return (
     <>
-      <RichText text={text.slice(0, cut > LONG_TEXT * 0.6 ? cut : LONG_TEXT)} />
+      <RichText text={text.slice(0, cut > LONG_TEXT * 0.6 ? cut : LONG_TEXT)} conv={conv} me={me} />
       …{' '}
       <button
         type="button"
@@ -387,6 +402,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
   const age = Date.now() - Date.parse(msg.createdAt);
   const emojiOnly = msg.type === 'text' && !deleted && msg.text.length <= 12 && EMOJI_ONLY.test(msg.text);
   const hasMedia = !deleted && msg.media;
+  const pinned = !!conv.pinned?.some((p) => p.messageId === msg.id);
 
   const reply = () => chat.setComposer(conv.id, { replyTo: msg, editing: null });
   const react = (emoji) => chat.react(msg, emoji);
@@ -404,10 +420,15 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
           msg.text && {
             label: 'Copy',
             icon: Copy,
-            onClick: () => navigator.clipboard?.writeText(msg.text).then(() => toast('Copied'), () => toast('Could not copy')),
+            onClick: () => navigator.clipboard?.writeText(plainMentions(msg.text, conv, me)).then(() => toast('Copied'), () => toast('Could not copy')),
           },
           { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
           { label: msg.starred ? 'Unstar' : 'Star', icon: msg.starred ? StarOff : Star, onClick: () => chat.toggleStar(msg) },
+          canSendIn(conv, me) && !conv.me?.blocked && {
+            label: pinned ? 'Unpin' : 'Pin',
+            icon: pinned ? PinOff : Pin,
+            onClick: () => chat.pinMessage(msg, !pinned),
+          },
           mine && msg.type === 'text' && age < EDIT_WINDOW_MS && {
             label: 'Edit',
             icon: Pencil,
@@ -473,12 +494,13 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
               {hasMedia && <Media msg={msg} />}
               {msg.text && (
                 <span className="text">
-                  <LongText text={msg.text} />
+                  <LongText text={msg.text} conv={conv} me={me} />
                 </span>
               )}
             </>
           )}
           <span className="meta">
+            {pinned && <Pin size={11} aria-label="Pinned" />}
             {msg.starred && <Star size={11} fill="currentColor" />}
             {msg.editedAt && !deleted && <span className="edited">edited</span>}
             <span>{formatTime(msg.createdAt)}</span>

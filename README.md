@@ -51,6 +51,11 @@ The `android/` project is committed, and its microphone, camera and contacts per
 
 For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overview (users, activity, messages, chats, open reports, storage, 14-day charts), Users (search, disable/enable, export CSV) and Reports (who, why, their last messages; dismiss, mark handled or disable the account).
 
+## @mentions and pinned messages
+
+- In a group, type **@** to pick a member (filter by name, @username or number; arrows/Enter or tap). They see it highlighted as **@You** and get a notification even if they muted the group; the chat list shows an **@** badge until they read it.
+- **Pin** / **Unpin** in a message's menu (up to 3 per chat; a 4th replaces the oldest). The bar under the chat header shows the newest pin; tap it to jump there, and again for the next one. In "only admins can send" groups, only admins can pin.
+
 ## Block and report
 
 In a contact's info: **Block** / **Unblock** and **Report** (reason, details, "Also block"). A blocked chat shows "You blocked this contact. Tap to unblock." instead of the message box. **Settings → Privacy → Blocked contacts** lists them.

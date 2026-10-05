@@ -17,6 +17,7 @@ import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } f
 import { connectionKind } from '../lib/network.js';
 import { storage } from '../lib/storage.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
+import { plainMentions } from '../lib/mentions.js';
 import { clearChatNotifications, setNativeNames, takeReceivedMessages } from '../lib/native.js';
 import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
@@ -516,7 +517,7 @@ export const useChat = create((set, get) => {
       if (!upTo) return;
       const mine = conv.participants.find((p) => p.id === me);
       if (conv.me.unreadCount === 0 && mine && ts(mine.lastReadAt) >= ts(upTo)) return;
-      patchConversation(convId, (c) => ({ me: { ...c.me, unreadCount: 0 } }));
+      patchConversation(convId, (c) => ({ me: { ...c.me, unreadCount: 0, unreadMentions: 0 } }));
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
@@ -732,6 +733,18 @@ export const useChat = create((set, get) => {
       }
     },
 
+    /** Pin (or unpin) a message for everyone in the chat; the chat update arrives live. */
+    async pinMessage(msg, pin) {
+      try {
+        const conv = get().conversations[msg.conversationId];
+        if (pin && (conv?.pinned?.length || 0) >= 3 && !window.confirm('You can pin up to 3 messages. Replace the oldest pin?')) return;
+        await api(`/api/messages/${msg.id}/pin`, { method: pin ? 'POST' : 'DELETE' });
+        toast(pin ? 'Message pinned' : 'Message unpinned');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    },
+
     forward(msg, convIds) {
       for (const convId of convIds) {
         get().sendMessage(convId, {
@@ -824,6 +837,7 @@ export const useChat = create((set, get) => {
       if (synced && previous && ts(synced) >= ts(previous) && ts(msg.createdAt) > ts(synced)) markSynced(convId, msg.createdAt);
 
       const mine = msg.sender === me;
+      const mentionsMe = !!msg.mentions?.includes(me);
       // Calls I answered or declined are logged in the chat but aren't "unread"; missed ones are.
       const counts = !isCallMessage(msg) || msg.call.status === 'missed';
       patchConversation(convId, (c) => ({
@@ -831,7 +845,7 @@ export const useChat = create((set, get) => {
         lastMessageAt: msg.createdAt,
         me:
           c.me && !mine && counts && !fetched && !isViewing(convId)
-            ? { ...c.me, unreadCount: c.me.unreadCount + 1 }
+            ? { ...c.me, unreadCount: c.me.unreadCount + 1, unreadMentions: (c.me.unreadMentions || 0) + (mentionsMe ? 1 : 0) }
             : c.me,
       }));
       if (mine) return; // sent from another of my devices
@@ -844,10 +858,14 @@ export const useChat = create((set, get) => {
       }
 
       const conv = get().conversations[convId];
-      if (quiet || !conv || conv.me?.muted || isViewing(convId) || !counts) return; // already notified
+      // Muted chats stay quiet unless I'm @mentioned.
+      if (quiet || !conv || (conv.me?.muted && !mentionsMe) || isViewing(convId) || !counts) return; // already notified
       if (useUI.getState().sounds) playIncoming();
       const sender = conv.participants.find((p) => p.id === msg.sender);
-      const title = conv.type === 'group' ? `${sender?.name || 'Someone'} @ ${conv.name}` : sender?.name || 'New message';
+      const title =
+        conv.type === 'group'
+          ? `${sender?.name || 'Someone'} ${mentionsMe ? 'mentioned you in' : '@'} ${conv.name}`
+          : sender?.name || 'New message';
       if (document.visibilityState !== 'visible') {
         showNotification(title, previewText(msg), () => get().openConversation(convId));
       } else {
@@ -903,7 +921,10 @@ export const useChat = create((set, get) => {
                 ...(kind === 'read' && { lastReadAt: maxIso(p.lastReadAt, at) }),
               }
         ),
-        me: userId === me && kind === 'read' && c.me ? { ...c.me, unreadCount } : c.me,
+        me:
+          userId === me && kind === 'read' && c.me
+            ? { ...c.me, unreadCount, ...(unreadCount === 0 && { unreadMentions: 0 }) }
+            : c.me,
       }));
     },
 
@@ -1024,7 +1045,8 @@ export function previewText(msg) {
     return `📞 ${title}${detail ? ` · ${detail}` : ''}`;
   }
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
-  if (msg.type === 'text' || msg.type === 'system') return msg.text;
+  const text = plainMentions(msg.text, useChat.getState().conversations[msg.conversationId], meId());
+  if (msg.type === 'text' || msg.type === 'system') return text;
   if (msg.type === 'file') return labels.file + (msg.media?.name || 'Document');
-  return msg.text ? `${labels[msg.type]} · ${msg.text}` : labels[msg.type];
+  return text ? `${labels[msg.type]} · ${text}` : labels[msg.type];
 }

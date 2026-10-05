@@ -94,6 +94,11 @@ function ConversationItem({ conv, me, active }) {
             <span className="conv-badges">
               {conv.me?.muted && <BellOff size={15} className="muted-icon" />}
               {conv.me?.pinned && <Pin size={15} className="muted-icon" />}
+              {conv.me?.unreadMentions > 0 && unread > 0 && (
+                <span className="badge mention-badge" aria-label="You were mentioned">
+                  @
+                </span>
+              )}
               {unread > 0 && <span className="badge">{unread > 99 ? '99+' : unread}</span>}
               <button className="conv-menu-btn" onClick={open} aria-label="Chat options">
                 <ChevronDown size={18} />
