@@ -342,6 +342,7 @@ function InfoContent({ conv }) {
   const [name, setName] = useState(conv.name || '');
   const peer = peerOf(conv, me);
   const presence = useChat(presenceSelector(peer?.id));
+  const iHideLastSeen = useAuth((s) => s.user?.settings?.showLastSeen === false);
   const isGroup = conv.type === 'group';
   const amAdmin = isGroup && conv.me?.role === 'admin';
   const canEdit = !isGroup || amAdmin;
@@ -379,7 +380,7 @@ function InfoContent({ conv }) {
         {isGroup ? (
           <AvatarPicker url={conv.avatarUrl} name={title} group size={150} disabled={!amAdmin} onChange={(avatarUrl) => save({ avatarUrl })} />
         ) : (
-          <Avatar name={title} url={chatAvatarUrl(conv, me)} size={150} onClick={chatAvatarUrl(conv, me) ? () => useUI.getState().openViewer({ url: chatAvatarUrl(conv, me), type: 'image', name: title }) : undefined} />
+          <Avatar name={title} url={chatAvatarUrl(conv, me)} size={150} onClick={chatAvatarUrl(conv, me) ? () => useUI.getState().openViewer({ url: chatAvatarUrl(conv, me), type: 'image', name: title, noDownload: !isSelfChat(conv, me) }) : undefined} />
         )}
         {editingName ? (
           <div className="editable-row center">
@@ -406,7 +407,9 @@ function InfoContent({ conv }) {
               : [
                 handleOf(peer) !== title && handleOf(peer),
                 peer?.phone !== title && peer?.phone,
-                presence?.online ? 'online' : presence?.lastSeen && formatLastSeen(presence.lastSeen),
+                presence?.online
+                  ? 'online'
+                  : !iHideLastSeen && presence?.lastSeen && formatLastSeen(presence.lastSeen),
               ]
                 .filter(Boolean)
                 .join(' · ')}

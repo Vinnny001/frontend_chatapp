@@ -216,7 +216,7 @@ export default function SettingsPanel() {
       <div className="settings-group">
         <Toggle
           label="Show my last seen"
-          hint="When off, nobody sees when you were last online"
+          hint="When off, nobody sees when you were last online, and you can’t see anyone else’s last seen either"
           checked={user.settings?.showLastSeen !== false}
           onChange={(showLastSeen) => update({ settings: { showLastSeen } })}
         />

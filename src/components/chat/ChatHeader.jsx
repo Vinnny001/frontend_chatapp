@@ -12,6 +12,7 @@ export function useSubtitle(conv, me) {
   const typing = useChat((s) => s.typing[conv.id]);
   const peer = peerOf(conv, me);
   const presence = useChat(presenceSelector(peer?.id));
+  const iHideLastSeen = useAuth((s) => s.user?.settings?.showLastSeen === false);
 
   const typers = Object.entries(typing || {}).filter(([id]) => id !== me);
   if (typers.length) {
@@ -23,7 +24,8 @@ export function useSubtitle(conv, me) {
   if (isSelfChat(conv, me)) return { text: 'Message yourself' };
   if (conv.type === 'direct') {
     if (presence?.online) return { text: 'online' };
-    const lastSeen = presence?.lastSeen ?? peer?.lastSeen;
+    // Hiding my own last seen hides everyone else's from me too (as on WhatsApp).
+    const lastSeen = iHideLastSeen ? null : presence?.lastSeen ?? peer?.lastSeen;
     return { text: lastSeen ? formatLastSeen(lastSeen) : '' };
   }
   const names = conv.participants.map((p) => (p.id === me ? 'You' : p.name?.split(' ')[0]));

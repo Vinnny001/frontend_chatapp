@@ -69,7 +69,8 @@ export default function ProfilePreview() {
           onClick={() => {
             if (!url) return toast(self ? 'Add a profile photo in Edit profile' : 'No profile photo');
             close();
-            ui.openViewer({ url, type: 'image', name: title });
+            // Only the owner may download a profile photo.
+            ui.openViewer({ url, type: 'image', name: title, noDownload: !self && !group });
           }}
           aria-label="View photo"
         >

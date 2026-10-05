@@ -22,9 +22,12 @@ export default function MediaViewer() {
     <div className="viewer" onClick={close}>
       <div className="viewer-bar" onClick={(e) => e.stopPropagation()}>
         <span className="viewer-title">{viewer.name}</span>
-        <a className="icon-btn" href={downloadHref || undefined} download={viewer.name} target="_blank" rel="noreferrer" aria-label="Download">
-          <Download size={20} />
-        </a>
+        {/* Someone else's profile photo: view only; only its owner can download it. */}
+        {!viewer.noDownload && (
+          <a className="icon-btn" href={downloadHref || undefined} download={viewer.name} target="_blank" rel="noreferrer" aria-label="Download">
+            <Download size={20} />
+          </a>
+        )}
         <button className="icon-btn" onClick={close} aria-label="Close">
           <X size={22} />
         </button>
@@ -35,7 +38,13 @@ export default function MediaViewer() {
         ) : !src ? null : viewer.type === 'video' ? (
           <video src={src} controls autoPlay playsInline />
         ) : (
-          <img src={src} alt={viewer.name || ''} />
+          <img
+            src={src}
+            alt={viewer.name || ''}
+            className={viewer.noDownload ? 'no-save' : undefined}
+            draggable={!viewer.noDownload}
+            onContextMenu={viewer.noDownload ? (e) => e.preventDefault() : undefined}
+          />
         )}
       </div>
     </div>

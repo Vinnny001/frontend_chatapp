@@ -1228,3 +1228,65 @@ button.doc-row {
     transform: scale(0.94);
   }
 }
+
+/* Someone else's profile photo in the viewer: no long-press "Save image", no dragging out */
+.viewer img.no-save {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ---------- choosing the visible part of a profile photo ---------- */
+.cropper-modal .modal-body {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.cropper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.cropper:active {
+  cursor: grabbing;
+}
+
+.cropper img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Darkens everything outside the round area that becomes the profile picture */
+.cropper-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.55);
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+
+.cropper-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 300px;
+  color: var(--text-2);
+}
+
+.cropper-zoom input {
+  flex: 1;
+  accent-color: var(--accent);
+}

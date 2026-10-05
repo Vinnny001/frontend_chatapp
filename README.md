@@ -48,6 +48,8 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - **In-app alerts**: a message or reaction from another chat shows a banner at the top ("Grace reacted 🔥 to: …"); tap it to open the chat. Reaction notifications name who reacted, using the name you saved them under.
 - **Calling someone**: you hear the phone's ringing tone while waiting, and a busy tone if they decline, are busy or don't answer.
 - **Profile preview**: tapping a photo in the chat list shows the photo with the name and Chat / Call / Video / Info (Chat / Info for groups). Tap the photo to see it full size; on your own chat the preview has Edit profile.
+- **Profile photos**: when adding one, drag and zoom to choose what shows (saved as a 640×640 square). Other people's profile photos are view-only (no download, no long-press save); you can download your own.
+- **Last seen works both ways**: if you hide yours, you don't see anyone else's either (enforced by the server).
 - **Message yourself**: at the top of New chat, by searching your own name or number, or by tapping your own number in a chat. You can't call yourself.
 - **Media, links and docs**: a chat's info shows a few recent photos and a count; "View all" opens tabs for All, Media, Docs, Links, Apps and Favourites, with search. **Media hub** (⋮ menu on the chat list) does the same across all chats. Works offline from what's on the device.
 - **Background sync**: after the chat list loads (on launch and every reconnect), chats are brought up to date on the device one at a time, including chats never opened (e.g. on a new phone), so they're readable offline later. It pauses while you send, open a chat or are on a call.
