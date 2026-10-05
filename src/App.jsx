@@ -6,6 +6,7 @@ import { useChat } from './store/chat.js';
 import { useUI } from './store/ui.js';
 import { useRealtime } from './lib/useRealtime.js';
 import AuthScreen from './components/AuthScreen.jsx';
+import VerifyEmailScreen from './components/VerifyEmailScreen.jsx';
 import Sidebar from './components/sidebar/Sidebar.jsx';
 import ChatView from './components/chat/ChatView.jsx';
 import EmptyChat from './components/chat/EmptyChat.jsx';
@@ -103,10 +104,12 @@ function Messenger({ token }) {
 
 export default function App() {
   const token = useAuth((s) => s.token);
+  // Signed up (or signed in) but the email isn't confirmed yet: only the code screen.
+  const emailPending = useAuth((s) => s.user?.emailVerified === false);
   useTheme();
   return (
     <>
-      {token ? <Messenger token={token} /> : <AuthScreen />}
+      {!token ? <AuthScreen /> : emailPending ? <VerifyEmailScreen /> : <Messenger token={token} />}
       <Toasts />
     </>
   );

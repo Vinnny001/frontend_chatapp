@@ -568,3 +568,55 @@
     transform: translate(-50%, -16px);
   }
 }
+
+/* ---------- confirm email / forgot password ---------- */
+.verify-screen {
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+}
+
+.verify-screen .auth-card {
+  text-align: center;
+  max-width: 420px;
+}
+
+.verify-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 8px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.code-input {
+  text-align: center;
+  font-size: 28px !important;
+  letter-spacing: 10px;
+  font-weight: 600;
+}
+
+.verify-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.forgot-link {
+  justify-self: end;
+  font-size: 14px;
+}
+
+.forgot h2 {
+  margin: 12px 0 4px;
+}
+
+.forgot-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

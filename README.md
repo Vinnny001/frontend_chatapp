@@ -42,6 +42,11 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - **Notifications (Android):** new messages arrive as pop-up (heads-up) notifications with sound through Firebase Cloud Messaging, including when the app is closed. The app asks for notification permission first, then contacts, one at a time. Tapping a notification opens that chat. The backends need `FIREBASE_SERVICE_ACCOUNT`, and the Android app needs `android/app/google-services.json` from the Firebase console (it isn't committed).
 - **Phone numbers in messages** are tappable. They show *Message …* if the number is registered, otherwise *Invite to ChatApp*, plus *Call* and *Copy*.
 
+## Sign-up and sign-in
+
+- New accounts confirm their email with a 6-digit code (sent by email; "Send a new code" after a minute). Until then only the confirm screen is available.
+- **Forgot password?** on the sign-in screen: enter your email, then the emailed code and a new password.
+
 ## Usernames, contacts and privacy
 
 - **Reactions** work like WhatsApp: one per person (a new emoji replaces yours, the same one again removes it), shown instantly, sent even when the live connection is down. The author gets a notification ("Reacted 👍 to: …"), which is removed if the reaction is taken back. The chat list shows the latest reaction, and tapping the reactions under a message shows who reacted.

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Lock, MessageCircle, Phone, Sparkles, Zap } from 'lucide-react';
 import { useAuth } from '../store/auth.js';
 import UsernameInput from './common/UsernameInput.jsx';
+import ForgotPassword from './ForgotPassword.jsx';
 
 const EMPTY = { name: '', username: '', email: '', phone: '', gender: '', password: '', confirm: '', identifier: '' };
 
@@ -75,6 +76,10 @@ export default function AuthScreen() {
       </section>
 
       <section className="auth-card">
+        {mode === 'forgot' ? (
+          <ForgotPassword initialEmail={form.identifier} onBack={() => switchMode('login')} />
+        ) : (
+        <>
         <div className="auth-tabs" role="tablist">
           <button role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => switchMode('login')}>
             Sign in
@@ -148,11 +153,18 @@ export default function AuthScreen() {
             </label>
           )}
 
+          {mode === 'login' && (
+            <button type="button" className="link-btn forgot-link" onClick={() => switchMode('forgot')}>
+              Forgot password?
+            </button>
+          )}
           {error && <p className="form-error">{error}</p>}
           <button className="btn btn-primary btn-block" disabled={busy}>
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </form>
+        </>
+        )}
       </section>
     </div>
   );

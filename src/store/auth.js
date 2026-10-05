@@ -20,6 +20,23 @@ export const useAuth = create((set, get) => ({
     get().setSession(token, user);
   },
 
+  /** Confirm the email with the 6-digit code (turns the pending login into a full one). */
+  async verifyEmail(code) {
+    const { token, user } = await api('/api/auth/verify-email', { method: 'POST', body: { code } });
+    get().setSession(token, user);
+  },
+
+  resendCode: () => api('/api/auth/resend-code', { method: 'POST' }),
+
+  /** Forgot password: email a reset code. */
+  forgotPassword: (email) => api('/api/auth/forgot', { method: 'POST', body: { email } }),
+
+  /** New password with the emailed code; signs in. */
+  async resetPassword(data) {
+    const { token, user } = await api('/api/auth/reset', { method: 'POST', body: data });
+    get().setSession(token, user);
+  },
+
   setSession(token, user) {
     setApiToken(token);
     storage.set('auth.token', token);
