@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Archive, Images, LogOut, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
+import BlockedPanel from './BlockedPanel.jsx';
 import SidePanel from './SidePanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
 import Avatar from '../common/Avatar.jsx';
@@ -29,7 +30,7 @@ function MediaHubPanel() {
   );
 }
 
-const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel };
+const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel, blocked: BlockedPanel };
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);

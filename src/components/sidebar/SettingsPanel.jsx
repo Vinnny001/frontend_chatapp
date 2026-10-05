@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, LogOut, Pencil } from 'lucide-react';
+import { Check, ChevronRight, LogOut, Pencil } from 'lucide-react';
 import SidePanel from './SidePanel.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import UsernameInput from '../common/UsernameInput.jsx';
@@ -214,6 +214,10 @@ export default function SettingsPanel() {
 
       <h3 className="section-label">Privacy</h3>
       <div className="settings-group">
+        <button className="settings-link" onClick={() => useUI.getState().openPanel('blocked')}>
+          <span>Blocked contacts</span>
+          <ChevronRight size={18} />
+        </button>
         <Toggle
           label="Show my last seen"
           hint="When off, nobody sees when you were last online, and you can’t see anyone else’s last seen either"

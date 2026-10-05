@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronRight, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, Ban, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
 import Modal from '../common/Modal.jsx';
 import SearchPanel from './SearchPanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
+import ReportDialog from '../common/ReportDialog.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
@@ -222,7 +223,19 @@ function MemberRow({ member, conv, me, amAdmin }) {
  * The other person in a one-to-one chat: their @username, number and email (when I may see
  * them), and saving them to my ChatApp contacts or my phone's address book.
  */
-function ContactCard({ peer }) {
+function ContactCard({ peer, conv }) {
+  const [reporting, setReporting] = useState(false);
+  const blocked = !!conv?.me?.blocked;
+  const who = peer.name;
+  const toggleBlock = async () => {
+    if (!blocked && !window.confirm(`Block ${who}? They won’t be able to call you or send you messages.`)) return;
+    try {
+      await useChat.getState().setBlocked(peer.id, !blocked);
+      toast(blocked ? `${who} unblocked` : `${who} blocked`);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   const saved = usePeople((s) => s.saved[peer.id]);
   const source = contactSource(peer.id);
   const [editing, setEditing] = useState(false);
@@ -326,6 +339,15 @@ function ContactCard({ peer }) {
       {!editing && canReadContacts() && !phone && handle && (
         <p className="hint">{handle} keeps their phone number private, so they can’t be saved to your phone contacts.</p>
       )}
+      <div className="contact-danger">
+        <button className="btn btn-ghost danger" onClick={toggleBlock}>
+          <Ban size={16} /> {blocked ? `Unblock ${who}` : `Block ${who}`}
+        </button>
+        <button className="btn btn-ghost danger" onClick={() => setReporting(true)}>
+          <Flag size={16} /> Report {who}
+        </button>
+      </div>
+      {reporting && <ReportDialog user={peer} name={who} conversationId={conv?.id} onClose={() => setReporting(false)} />}
     </section>
   );
 }
@@ -440,7 +462,7 @@ function InfoContent({ conv }) {
         </div>
       </section>
 
-      {!isGroup && peer && <ContactCard peer={peer} />}
+      {!isGroup && peer && <ContactCard peer={peer} conv={conv} />}
 
       {(isGroup || peer?.about) && (
         <section className="info-card">

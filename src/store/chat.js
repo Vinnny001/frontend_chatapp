@@ -948,6 +948,12 @@ export const useChat = create((set, get) => {
       }));
     },
 
+    /** Block or unblock someone (they aren't told). Refreshes the chat list. */
+    async setBlocked(userId, blocked) {
+      await api(`/api/users/${userId}/block`, { method: blocked ? 'POST' : 'DELETE' });
+      await get().loadConversations().catch(() => {});
+    },
+
     /** A group call started, changed or ended. */
     onGroupCall({ conversationId, groupCall }) {
       patchConversation(conversationId, { groupCall });

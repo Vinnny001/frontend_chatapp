@@ -47,6 +47,10 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - New accounts confirm their email with a 6-digit code (sent by email; "Send a new code" after a minute). Until then only the confirm screen is available.
 - **Forgot password?** on the sign-in screen: enter your email, then the emailed code and a new password.
 
+## Block and report
+
+In a contact's info: **Block** / **Unblock** and **Report** (reason, details, "Also block"). A blocked chat shows "You blocked this contact. Tap to unblock." instead of the message box. **Settings → Privacy → Blocked contacts** lists them.
+
 ## Usernames, contacts and privacy
 
 - **Reactions** work like WhatsApp: one per person (a new emoji replaces yours, the same one again removes it), shown instantly, sent even when the live connection is down. The author gets a notification ("Reacted 👍 to: …"), which is removed if the reaction is taken back. The chat list shows the latest reaction, and tapping the reactions under a message shows who reacted.

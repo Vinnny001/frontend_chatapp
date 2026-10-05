@@ -210,6 +210,24 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     setFiles(null);
   }
 
+  if (conv.me?.blocked) {
+    const peer = conv.participants.find((p) => p.id !== me);
+    return (
+      <button
+        className="composer-locked blocked"
+        onClick={() =>
+          useChat
+            .getState()
+            .setBlocked(peer.id, false)
+            .then(() => toast(`${peer.name} unblocked`))
+            .catch((e) => toast(e.message, 'error'))
+        }
+      >
+        You blocked this contact. Tap to unblock.
+      </button>
+    );
+  }
+
   if (!canSendIn(conv, me)) {
     return <div className="composer-locked">Only admins can send messages to this group.</div>;
   }

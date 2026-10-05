@@ -47,6 +47,7 @@ export default function ChatHeader({ conv }) {
   const call = (kind) => {
     if (conv.type === 'group') return useGroupCall.getState().join(conv.id, kind);
     if (!peer) return;
+    if (conv.me?.blocked) return toast('You blocked this contact. Unblock them to call.');
     startCall(conv.id, { id: peer.id, name: peer.name, avatarUrl: peer.avatarUrl }, kind);
   };
   // A group call is going on that I'm not in: "Join".
