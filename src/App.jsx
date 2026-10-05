@@ -20,6 +20,7 @@ import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
 import InAppBanner from './components/common/InAppBanner.jsx';
 import ProfilePreview from './components/sidebar/ProfilePreview.jsx';
+import AdminPanel from './components/admin/AdminPanel.jsx';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
 
@@ -98,6 +99,7 @@ function Messenger({ token }) {
       <PhoneMenu />
       <InAppBanner />
       <ProfilePreview />
+      <AdminPanel />
     </div>
   );
 }

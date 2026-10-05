@@ -43,6 +43,7 @@ export const useUI = create((set, get) => ({
   // { id, title, text, avatarUrl, conversationId }
   banner: null,
   profilePreview: null, // conversation id whose photo was tapped in the chat list
+  adminOpen: false,
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -64,6 +65,7 @@ export const useUI = create((set, get) => ({
   },
   hideBanner: () => set({ banner: null }),
   setProfilePreview: (profilePreview) => set({ profilePreview }),
+  setAdminOpen: (adminOpen) => set({ adminOpen }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;

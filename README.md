@@ -47,6 +47,10 @@ The `android/` project is committed, and its microphone, camera and contacts per
 - New accounts confirm their email with a 6-digit code (sent by email; "Send a new code" after a minute). Until then only the confirm screen is available.
 - **Forgot password?** on the sign-in screen: enter your email, then the emailed code and a new password.
 
+## Admin page
+
+For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overview (users, activity, messages, chats, open reports, storage, 14-day charts), Users (search, disable/enable, export CSV) and Reports (who, why, their last messages; dismiss, mark handled or disable the account).
+
 ## Block and report
 
 In a contact's info: **Block** / **Unblock** and **Report** (reason, details, "Also block"). A blocked chat shows "You blocked this contact. Tap to unblock." instead of the message box. **Settings → Privacy → Blocked contacts** lists them.

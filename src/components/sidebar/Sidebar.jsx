@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, Images, LogOut, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
 import SidePanel from './SidePanel.jsx';
@@ -155,6 +155,7 @@ export default function Sidebar() {
             { label: 'New group', icon: Users, onClick: () => openPanel('newGroup') },
             { label: 'Media hub', icon: Images, onClick: () => openPanel('hub') },
             { label: 'Calls', icon: Phone, onClick: () => openPanel('calls') },
+            user?.isAdmin && { label: 'Admin', icon: Shield, onClick: () => useUI.getState().setAdminOpen(true) },
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
             { label: 'Log out', icon: LogOut, danger: true, onClick: logout },

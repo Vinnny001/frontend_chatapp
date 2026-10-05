@@ -40,6 +40,7 @@ export function useRealtime(token) {
       if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
     });
     requestNotificationPermission();
+    useAuth.getState().refreshMe().catch(() => {}); // fresh profile (e.g. admin access)
     // Android: notification buttons (Reply, Mark as read, Decline) work with the app closed.
     setNativeSession(token);
     const openChat = (conversationId) => {
