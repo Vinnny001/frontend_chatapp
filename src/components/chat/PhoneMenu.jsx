@@ -45,7 +45,14 @@ export default function PhoneMenu() {
     header = <div className="menu-header">Checking {phone}…</div>;
   } else if (state.status === 'found' && state.match.self) {
     header = <div className="menu-header">This is your number</div>;
-    items = [copy];
+    items = [
+      {
+        label: 'Message yourself',
+        icon: MessageCircle,
+        onClick: () => useChat.getState().openDirect(state.match.user.id).catch((e) => toast(e.message, 'error')),
+      },
+      copy,
+    ];
   } else if (state.status === 'found') {
     header = (
       <div className="menu-header person">

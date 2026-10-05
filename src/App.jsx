@@ -16,6 +16,7 @@ import ForwardDialog from './components/chat/ForwardDialog.jsx';
 import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
 import InAppBanner from './components/common/InAppBanner.jsx';
+import ProfilePreview from './components/sidebar/ProfilePreview.jsx';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
 
@@ -41,7 +42,8 @@ function useBackButton() {
     const handle = CapacitorApp.addListener('backButton', () => {
       const ui = useUI.getState();
       const chat = useChat.getState();
-      if (ui.phoneMenu) ui.closePhoneMenu();
+      if (ui.profilePreview) ui.setProfilePreview(null);
+      else if (ui.phoneMenu) ui.closePhoneMenu();
       else if (ui.viewer) ui.closeViewer();
       else if (ui.forwarding) ui.setForwarding(null);
       else if (ui.infoOpen) ui.setInfoOpen(false);
@@ -90,6 +92,7 @@ function Messenger({ token }) {
       <ForwardDialog />
       <PhoneMenu />
       <InAppBanner />
+      <ProfilePreview />
     </div>
   );
 }

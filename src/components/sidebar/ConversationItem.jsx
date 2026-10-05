@@ -4,6 +4,7 @@ import Avatar from '../common/Avatar.jsx';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
 import { formatListTime } from '../../lib/format.js';
+import { useUI } from '../../store/ui.js';
 import { chatAvatarUrl, conversationTitle, isSelfChat, messageStatus, peerOf, previewText, reactionPreview, useChat, isOnlineSelector } from '../../store/chat.js';
 
 function ConversationItem({ conv, me, active }) {
@@ -72,7 +73,17 @@ function ConversationItem({ conv, me, active }) {
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && openConversation(conv.id)}
       >
-        <Avatar name={title} url={chatAvatarUrl(conv, me)} online={online} group={conv.type === 'group'} size={50} />
+        <Avatar
+          name={title}
+          url={chatAvatarUrl(conv, me)}
+          online={online}
+          group={conv.type === 'group'}
+          size={50}
+          onClick={(e) => {
+            e.stopPropagation(); // the photo opens the profile preview, not the chat
+            useUI.getState().setProfilePreview(conv.id);
+          }}
+        />
         <div className="conv-body">
           <div className="conv-top">
             <span className="conv-title">{title}</span>

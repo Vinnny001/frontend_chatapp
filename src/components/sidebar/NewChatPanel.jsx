@@ -18,7 +18,9 @@ export function personSub(person, name) {
 export function PersonRow({ person, onClick, selected, right, sub, name: nameOverride }) {
   const online = useChat(isOnlineSelector(person.id));
   usePeople((s) => s.saved[person.id]); // re-render when I save or rename them
-  const name = nameOverride || displayName(person);
+  const isMe = person.id === useAuth.getState().user?.id;
+  const name = nameOverride || (isMe ? `${useAuth.getState().user?.name} (You)` : displayName(person));
+  if (isMe && sub === undefined) sub = 'Message yourself';
   return (
     <button className={`person-row ${selected ? 'selected' : ''}`} onClick={onClick}>
       <Avatar name={name} url={person.avatarUrl} size={44} online={online} />
@@ -155,7 +157,7 @@ function SavedContactsSection({ onStart }) {
 
 export default function NewChatPanel() {
   const [query, setQuery] = useState('');
-  const { people, loading } = usePeopleSearch(query);
+  const { people, loading } = usePeopleSearch(query, { includeSelf: true });
   const openPanel = useUI((s) => s.openPanel);
   const closePanel = useUI((s) => s.closePanel);
   const openDirect = useChat((s) => s.openDirect);

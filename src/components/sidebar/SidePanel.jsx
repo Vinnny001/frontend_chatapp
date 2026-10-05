@@ -22,7 +22,7 @@ export default function SidePanel({ title, children, onBack }) {
 }
 
 /** People you already chat with, plus server search results for the query. */
-export function usePeopleSearch(query) {
+export function usePeopleSearch(query, { includeSelf = false } = {}) {
   const me = useAuth((s) => s.user?.id);
   const conversations = useChat((s) => s.conversations);
   const saved = usePeople((s) => s.saved);
@@ -59,6 +59,16 @@ export function usePeopleSearch(query) {
   }, [query]);
 
   const q = query.trim().toLowerCase();
+  // Searching your own name, username or number offers "Message yourself".
+  const self = useAuth.getState().user;
+  const qDigits = q.replace(/\D/g, '');
+  const findsMe =
+    includeSelf &&
+    self &&
+    q &&
+    (self.name?.toLowerCase().includes(q) ||
+      (self.username && self.username.includes(q.replace(/^@/, ''))) ||
+      (qDigits.length >= 4 && self.phone?.replace(/\D/g, '').includes(qDigits)));
   const people = q
     ? [
         ...contacts.filter(
@@ -72,6 +82,7 @@ export function usePeopleSearch(query) {
         (p, i, arr) => arr.findIndex((x) => x.id === p.id) === i
       )
     : contacts;
+  if (findsMe && !people.some((p) => p.id === self.id)) people.unshift({ id: self.id, avatarUrl: self.avatarUrl, name: self.name });
 
   return { people, loading };
 }

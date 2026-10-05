@@ -42,6 +42,7 @@ export const useUI = create((set, get) => ({
   // In-app notification at the top of the screen (a message or reaction from another chat):
   // { id, title, text, avatarUrl, conversationId }
   banner: null,
+  profilePreview: null, // conversation id whose photo was tapped in the chat list
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -62,6 +63,7 @@ export const useUI = create((set, get) => ({
     setTimeout(() => get().banner?.id === id && set({ banner: null }), 4500);
   },
   hideBanner: () => set({ banner: null }),
+  setProfilePreview: (profilePreview) => set({ profilePreview }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;
