@@ -11,6 +11,8 @@ import ChatView from './components/chat/ChatView.jsx';
 import EmptyChat from './components/chat/EmptyChat.jsx';
 import InfoPanel from './components/info/InfoPanel.jsx';
 import CallOverlay from './components/call/CallOverlay.jsx';
+import GroupCallOverlay from './components/call/GroupCallOverlay.jsx';
+import { useGroupCall } from './store/groupCall.js';
 import MediaViewer from './components/common/MediaViewer.jsx';
 import ForwardDialog from './components/chat/ForwardDialog.jsx';
 import PhoneMenu from './components/chat/PhoneMenu.jsx';
@@ -63,12 +65,13 @@ function useBackButton() {
  */
 function LockedCall() {
   const hasCall = useCall((s) => !!s.call);
+  const inGroupCall = useGroupCall((s) => !!s.active);
   useEffect(() => {
     nativeCallScreenShown();
   }, []);
   return (
     <div className="locked-call">
-      {hasCall ? <CallOverlay /> : <p className="locked-call-wait">Connecting call…</p>}
+      {inGroupCall ? <GroupCallOverlay /> : hasCall ? <CallOverlay /> : <p className="locked-call-wait">Connecting call…</p>}
     </div>
   );
 }
@@ -88,6 +91,7 @@ function Messenger({ token }) {
       <main className="chat-area">{activeId ? <ChatView key={activeId} convId={activeId} /> : <EmptyChat />}</main>
       {infoOpen && activeId && <InfoPanel convId={activeId} />}
       <CallOverlay />
+      <GroupCallOverlay />
       <MediaViewer />
       <ForwardDialog />
       <PhoneMenu />

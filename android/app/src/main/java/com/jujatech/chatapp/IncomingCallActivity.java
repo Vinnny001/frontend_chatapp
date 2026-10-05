@@ -34,6 +34,7 @@ public class IncomingCallActivity extends Activity {
     private String callId;
     private String conversationId;
     private String kind;
+    private boolean group;
 
     /** The call was answered elsewhere, declined, cancelled or timed out: close the screen. */
     static void dismiss(String callId) {
@@ -78,6 +79,8 @@ public class IncomingCallActivity extends Activity {
         kind = intent.getStringExtra("kind");
         String name = intent.getStringExtra("callerName");
         String avatarUrl = intent.getStringExtra("callerAvatar");
+        group = intent.getBooleanExtra("group", false);
+        String starter = intent.getStringExtra("starterName");
         boolean video = "video".equals(kind);
 
         LinearLayout root = new LinearLayout(this);
@@ -86,7 +89,7 @@ public class IncomingCallActivity extends Activity {
         root.setBackgroundColor(Color.parseColor("#0B141A"));
         root.setPadding(dp(24), dp(96), dp(24), dp(64));
 
-        TextView label = text(video ? "ChatApp video call" : "ChatApp voice call", 15, "#AEBAC1");
+        TextView label = text("ChatApp " + (group ? "group " : "") + (video ? "video call" : "voice call"), 15, "#AEBAC1");
         root.addView(label);
 
         ImageView photo = new ImageView(this);
@@ -102,7 +105,7 @@ public class IncomingCallActivity extends Activity {
         LinearLayout.LayoutParams titleParams = wrap();
         titleParams.topMargin = dp(24);
         root.addView(title, titleParams);
-        root.addView(text(video ? "Incoming video call" : "Incoming voice call", 16, "#AEBAC1"), wrap());
+        root.addView(text(group ? starter + " is calling the group" : video ? "Incoming video call" : "Incoming voice call", 16, "#AEBAC1"), wrap());
 
         View spacer = new View(this);
         root.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
@@ -113,7 +116,7 @@ public class IncomingCallActivity extends Activity {
         buttons.addView(button("Decline", "#E5484D", v -> decline()));
         View gap = new View(this);
         buttons.addView(gap, new LinearLayout.LayoutParams(dp(96), 1));
-        buttons.addView(button("Answer", "#1FA855", v -> answer()));
+        buttons.addView(button(group ? "Join" : "Answer", "#1FA855", v -> answer()));
         root.addView(buttons, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         setContentView(root);
@@ -122,6 +125,11 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void decline() {
+        if (group) { // a group call goes on without you: just stop ringing here
+            Notifier.cancelCall(this, callId);
+            finishAndRemoveTask();
+            return;
+        }
         sendBroadcast(new Intent(this, NotificationActionReceiver.class)
             .setAction(NotificationActionReceiver.DECLINE)
             .putExtra("callId", callId)
@@ -130,7 +138,7 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void answer() {
-        startActivity(Notifier.openIntent(this, "answer", conversationId, callId).putExtra("kind", kind));
+        startActivity(Notifier.openIntent(this, group ? "answerGroup" : "answer", conversationId, callId).putExtra("kind", kind));
         finishAndRemoveTask();
     }
 

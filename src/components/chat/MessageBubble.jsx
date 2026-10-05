@@ -39,6 +39,7 @@ import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
 import { callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { useCall } from '../../store/call.js';
+import { useGroupCall } from '../../store/groupCall.js';
 import { toast, useUI } from '../../store/ui.js';
 
 const EDIT_WINDOW_MS = 24 * 3600 * 1000;
@@ -290,7 +291,10 @@ function CallBubble({ msg, conv, me }) {
   const { title, detail, missed, outgoing } = callSummary(msg, me);
   const peer = peerOf(conv, me);
   const Icon = missed ? PhoneMissed : outgoing ? PhoneOutgoing : PhoneIncoming;
-  const callBack = () => peer && useCall.getState().startCall(conv.id, peer, msg.call.kind);
+  const group = conv.type === 'group';
+  const canCall = !!peer || group;
+  const callBack = () =>
+    group ? useGroupCall.getState().join(conv.id, msg.call.kind) : peer && useCall.getState().startCall(conv.id, peer, msg.call.kind);
   return (
     <div
       className={`msg-row ${outgoing ? 'out' : 'in'}`}
@@ -302,7 +306,7 @@ function CallBubble({ msg, conv, me }) {
       onTouchEnd={longPress.onTouchEnd}
     >
       <div className="msg-stack">
-        <button type="button" className={`bubble call-bubble ${missed ? 'missed' : ''}`} onClick={callBack} disabled={!peer}>
+        <button type="button" className={`bubble call-bubble ${missed ? 'missed' : ''}`} onClick={callBack} disabled={!canCall}>
           <span className="call-icon">
             <Icon size={18} />
           </span>
@@ -322,7 +326,7 @@ function CallBubble({ msg, conv, me }) {
           y={menu.y}
           onClose={close}
           items={[
-            peer && { label: msg.call.kind === 'video' ? 'Video call' : 'Voice call', icon: msg.call.kind === 'video' ? Video : Phone, onClick: callBack },
+            canCall && { label: msg.call.kind === 'video' ? 'Video call' : 'Voice call', icon: msg.call.kind === 'video' ? Video : Phone, onClick: callBack },
             { label: 'Delete for me', icon: Trash2, danger: true, onClick: () => useChat.getState().deleteMessage(msg, false) },
           ]}
         />

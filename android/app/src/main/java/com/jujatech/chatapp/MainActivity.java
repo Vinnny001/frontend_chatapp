@@ -73,7 +73,10 @@ public class MainActivity extends BridgeActivity {
         data.put("conversationId", intent.getStringExtra("conversationId"));
         data.put("callId", intent.getStringExtra("callId"));
         data.put("kind", intent.getStringExtra("kind"));
-        if ("answer".equals(action)) {
+        boolean groupCall = "answerGroup".equals(action);
+        if (groupCall) data.put("action", "answer");
+        data.put("group", groupCall);
+        if ("answer".equals(action) || groupCall) {
             Notifier.cancelCall(this, intent.getStringExtra("callId"));
             KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
             boolean locked = keyguard != null && keyguard.isKeyguardLocked();

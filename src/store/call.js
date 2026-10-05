@@ -212,13 +212,16 @@ export const useCall = create((set, get) => ({
   },
 
   /** "Answer" tapped on the ringing notification: accept now, or once the call reaches the app. */
+  /** A call answered from outside the app (notification / lock screen): see `external`. */
+  setExternal(callId, { locked = false, connected = () => get().call?.id === callId } = {}) {
+    set({ external: { callId, locked } });
+    clearTimeout(externalTimer);
+    // The call ended before it reached the app: go back without showing anything.
+    externalTimer = setTimeout(() => !connected() && get().endExternal(callId), 30_000);
+  },
+
   answerWhenReady(callId, { locked = false, returnAfter = false } = {}) {
-    if (returnAfter) {
-      set({ external: { callId, locked } });
-      clearTimeout(externalTimer);
-      // The call ended before it reached the app: go back without showing anything.
-      externalTimer = setTimeout(() => get().call?.id !== callId && get().endExternal(callId), 30_000);
-    }
+    if (returnAfter) get().setExternal(callId, { locked });
     const { call } = get();
     if (call?.id === callId && call.direction === 'incoming' && call.state === 'ringing') return get().acceptCall();
     pendingAnswer = { callId, until: Date.now() + RING_TIMEOUT_MS };

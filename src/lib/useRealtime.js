@@ -11,6 +11,7 @@ import { setupPush } from './push.js';
 import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
+import { useGroupCall } from '../store/groupCall.js';
 import { useChat } from '../store/chat.js';
 import { toast } from '../store/ui.js';
 
@@ -46,10 +47,14 @@ export function useRealtime(token) {
       chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
     };
     cleanups.push(
-      onNativeAction(({ action, conversationId, callId, locked, returnAfter }) => {
+      onNativeAction(({ action, conversationId, callId, locked, returnAfter, group }) => {
         if (action === 'open' && conversationId) openChat(conversationId);
         // "Answer" on the ringing notification: pick up as soon as the call reaches the app.
-        if (action === 'answer' && callId) useCall.getState().answerWhenReady(callId, { locked, returnAfter });
+        if (action === 'answer' && callId && group) {
+          // "Join" on a ringing group call.
+          if (returnAfter) useCall.getState().setExternal(callId, { locked, connected: () => !!useGroupCall.getState().active });
+          useGroupCall.getState().join(conversationId);
+        } else if (action === 'answer' && callId) useCall.getState().answerWhenReady(callId, { locked, returnAfter });
       })
     );
     // Phones: Android shows one permission prompt at a time and drops a second request made
@@ -115,6 +120,10 @@ export function useRealtime(token) {
       if (me?.id === u.id) useAuth.getState().setUser({ ...me, ...u, lastSeen: me.lastSeen });
     });
 
+    socket.on('groupcall:update', (p) => {
+      useChat.getState().onGroupCall(p);
+      useGroupCall.getState().onUpdate(p);
+    });
     socket.on('call:incoming', calls.onIncoming);
     socket.on('call:accepted', calls.onAccepted);
     socket.on('call:rejected', calls.onRejected);
@@ -179,6 +188,7 @@ export function useRealtime(token) {
       }
       disconnectSocket();
       useCall.getState().call && useCall.getState().finish('Signed out');
+      useGroupCall.getState().leave();
       useChat.getState().reset();
     };
   }, [token]);

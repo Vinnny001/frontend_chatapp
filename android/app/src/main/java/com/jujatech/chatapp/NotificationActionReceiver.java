@@ -20,6 +20,8 @@ public class NotificationActionReceiver extends BroadcastReceiver {
     static final String READ = "com.jujatech.chatapp.MARK_READ";
     static final String DISMISS = "com.jujatech.chatapp.DISMISS";
     static final String DECLINE = "com.jujatech.chatapp.DECLINE_CALL";
+    /** Group call: stop ringing on this phone only (the call goes on for the others). */
+    static final String SILENCE = "com.jujatech.chatapp.SILENCE_CALL";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -30,6 +32,10 @@ public class NotificationActionReceiver extends BroadcastReceiver {
 
         if (DISMISS.equals(action)) {
             Notifier.forgetConversation(context, conversationId);
+            return;
+        }
+        if (SILENCE.equals(action)) {
+            Notifier.cancelCall(context, callId);
             return;
         }
 

@@ -5,6 +5,7 @@ import Menu from '../common/Menu.jsx';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
+import { useGroupCall } from '../../store/groupCall.js';
 import { chatAvatarUrl, conversationTitle, isSelfChat, peerOf, useChat, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
@@ -44,9 +45,13 @@ export default function ChatHeader({ conv }) {
   const title = conversationTitle(conv, me);
 
   const call = (kind) => {
-    if (!peer) return toast('Group calls are coming soon');
+    if (conv.type === 'group') return useGroupCall.getState().join(conv.id, kind);
+    if (!peer) return;
     startCall(conv.id, { id: peer.id, name: peer.name, avatarUrl: peer.avatarUrl }, kind);
   };
+  // A group call is going on that I'm not in: "Join".
+  const inGroupCall = useGroupCall((s) => s.active?.conversationId === conv.id);
+  const joinable = conv.type === 'group' && conv.groupCall && !inGroupCall;
 
   return (
     <header className="chat-header">
@@ -63,7 +68,12 @@ export default function ChatHeader({ conv }) {
           <span className={`chat-subtitle ${subtitle.live ? 'live' : ''}`}>{subtitle.text}</span>
         </span>
       </button>
-      {conv.type === 'direct' && peer && (
+      {joinable && (
+        <button className="join-call-btn" onClick={() => call(conv.groupCall.kind)} aria-label="Join group call">
+          <Phone size={15} /> Join
+        </button>
+      )}
+      {((conv.type === 'direct' && peer) || (conv.type === 'group' && !joinable)) && (
         <>
           <button className="icon-btn" onClick={() => call('video')} aria-label="Video call" title="Video call">
             <Video size={21} />

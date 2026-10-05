@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js';
 import { formatListTime } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
+import { useGroupCall } from '../../store/groupCall.js';
 import { callSummary, conversationTitle, peerOf, useChat } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
@@ -57,14 +58,15 @@ export default function CallsPanel() {
                 {detail ? ` · ${detail}` : ''} · {formatListTime(m.createdAt)}
               </span>
             </span>
-            {peer && (
+            {(peer || conv.type === 'group') && (
               <button
                 className="icon-btn"
                 aria-label={m.call.kind === 'video' ? 'Video call' : 'Voice call'}
                 onClick={(e) => {
                   e.stopPropagation();
                   closePanel();
-                  useCall.getState().startCall(conv.id, peer, m.call.kind);
+                  if (conv.type === 'group') useGroupCall.getState().join(conv.id, m.call.kind);
+                  else useCall.getState().startCall(conv.id, peer, m.call.kind);
                 }}
               >
                 <KindIcon size={20} />

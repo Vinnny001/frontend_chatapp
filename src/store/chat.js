@@ -948,6 +948,11 @@ export const useChat = create((set, get) => {
       }));
     },
 
+    /** A group call started, changed or ended. */
+    onGroupCall({ conversationId, groupCall }) {
+      patchConversation(conversationId, { groupCall });
+    },
+
     /** My contacts changed (address book sync, saved contact): show everyone's new names. */
     refreshNames() {
       set((s) => ({
@@ -982,6 +987,13 @@ export function callSummary(msg, me = meId()) {
   const outgoing = msg.sender === me;
   const noun = kind === 'video' ? 'video call' : 'voice call';
   const Noun = kind === 'video' ? 'Video call' : 'Voice call';
+  if (msg.call.group) {
+    // One entry for the whole group: those who took part see the length, the rest a missed call.
+    const tookPart = (msg.call.participants || []).includes(me);
+    if (tookPart && status === 'answered') return { title: `Group ${noun}`, detail: clock(duration), missed: false, outgoing, group: true };
+    if (tookPart) return { title: `Group ${noun}`, detail: 'No one joined', missed: false, outgoing, group: true };
+    return { title: `Missed group ${noun}`, detail: '', missed: true, outgoing: false, group: true };
+  }
   if (status === 'answered') return { title: Noun, detail: clock(duration), missed: false, outgoing };
   if (outgoing) {
     return { title: Noun, detail: { declined: 'Declined', busy: 'Busy' }[status] || 'No answer', missed: false, outgoing };

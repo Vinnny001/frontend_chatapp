@@ -495,12 +495,18 @@ final class Notifier {
         if (System.currentTimeMillis() - sentAt > 45_000) return; // arrived too late to answer
 
         boolean video = "video".equals(d.get("kind"));
-        String name = Session.nameFor(context, d.get("callerId"), d.get("callerName"));
+        boolean group = "1".equals(d.get("group"));
+        // A group call shows the group, and who started it: "Team" · "Ann is calling the group".
+        String name = group ? d.get("callerName") : Session.nameFor(context, d.get("callerId"), d.get("callerName"));
+        String starter = group ? Session.nameFor(context, d.get("callerId"), d.get("starterName")) : null;
+        String what = (group ? "group " : "") + (video ? "video call" : "voice call");
         Person caller = person(context, d.get("callerId"), name, d.get("callerAvatar"));
         String conversationId = d.get("conversationId");
 
-        PendingIntent answer = activity(context, "answer", conversationId, callId, d.get("kind"));
-        PendingIntent decline = broadcast(context, NotificationActionReceiver.DECLINE, conversationId, callId, false);
+        PendingIntent answer = activity(context, group ? "answerGroup" : "answer", conversationId, callId, d.get("kind"));
+        // Declining a group call only silences this phone; the call goes on for the others.
+        PendingIntent decline = broadcast(context, group ? NotificationActionReceiver.SILENCE : NotificationActionReceiver.DECLINE,
+            conversationId, callId, false);
         // Screen off/locked: the full-screen incoming-call screen (not the app, so the chats stay
         // private). Phone in use: pops up with the buttons; tapping it opens the same screen.
         Intent screen = new Intent(context, IncomingCallActivity.class)
@@ -509,7 +515,9 @@ final class Notifier {
             .putExtra("conversationId", conversationId)
             .putExtra("kind", d.get("kind"))
             .putExtra("callerName", name)
-            .putExtra("callerAvatar", d.get("callerAvatar"));
+            .putExtra("callerAvatar", d.get("callerAvatar"))
+            .putExtra("group", group)
+            .putExtra("starterName", starter);
         PendingIntent ring = PendingIntent.getActivity(context, ("screen:" + callId).hashCode(), screen,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
@@ -517,7 +525,7 @@ final class Notifier {
             .setSmallIcon(R.drawable.ic_stat_chat)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(name)
-            .setContentText(video ? "Incoming video call" : "Incoming voice call")
+            .setContentText(group ? starter + " is calling the group" : "Incoming " + what)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer).setIsVideo(video))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -561,8 +569,9 @@ final class Notifier {
         if (conversationId == null || !canNotify(context)) return;
         int count = missed(context).getInt(conversationId, 0) + 1;
         missed(context).edit().putInt(conversationId, count).apply();
-        String name = Session.nameFor(context, d.get("callerId"), d.get("callerName"));
-        String kind = "video".equals(d.get("kind")) ? "video" : "voice";
+        boolean group = "1".equals(d.get("group"));
+        String name = group ? d.get("callerName") : Session.nameFor(context, d.get("callerId"), d.get("callerName"));
+        String kind = (group ? "group " : "") + ("video".equals(d.get("kind")) ? "video" : "voice");
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_MISSED)
             .setSmallIcon(R.drawable.ic_stat_chat)
