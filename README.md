@@ -56,6 +56,12 @@ For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overvie
 - In a group, type **@** to pick a member (filter by name, @username or number; arrows/Enter or tap). They see it highlighted as **@You** and get a notification even if they muted the group; the chat list shows an **@** badge until they read it.
 - **Pin** / **Unpin** in a message's menu (up to 3 per chat; a 4th replaces the oldest). The bar under the chat header shows the newest pin; tap it to jump there, and again for the next one. In "only admins can send" groups, only admins can pin.
 
+## Polls, view once, voice notes
+
+- **Polls**: 📎 → **Poll**: a question, 2–12 options (a new row appears as you fill them), and "Allow multiple answers". Tap an option to vote, tap again to take it back; counts and bars update live for everyone. **View votes** shows who picked what.
+- **View once**: in the photo/video preview, tap ① before sending (no caption). The recipient taps to open it full screen, once; it's never saved on the phone, can't be forwarded and never shows a thumbnail. Afterwards both sides see "Opened". The sender can't reopen it either. (Screenshots aren't blocked.)
+- **Voice notes**: the 1× / 1.5× / 2× speed you pick is remembered for all voice notes, and when one ends the next voice note in the chat starts by itself.
+
 ## Group invite links
 
 Group admins: group info → **Invite via link** to share, copy or reset the link (resetting stops the old one at once). The link is `https://<api>/join/<code>`, a small page served by the API with **Open in ChatApp**, which opens the app through `chatapp://join/<code>` (registered in `AndroidManifest.xml`). In the app, the link (tapped in a chat or opened from another app, even when the app was closed) shows the group's photo, name, description and member count, with **Join group**.

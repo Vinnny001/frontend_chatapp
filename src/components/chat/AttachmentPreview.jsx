@@ -1,15 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, Send, X } from 'lucide-react';
 import { fileKind, formatBytes } from '../../lib/format.js';
+import { OnceIcon } from './ViewOnce.jsx';
 
 export default function AttachmentPreview({ files, onCancel, onSend }) {
   const [caption, setCaption] = useState('');
   const [index, setIndex] = useState(0);
-  const urls = useMemo(() => files.map((f) => (/^(image|video)\//.test(f.type) ? URL.createObjectURL(f) : null)), [files]);
-  useEffect(() => () => urls.forEach((u) => u && URL.revokeObjectURL(u)), [urls]);
+  const [viewOnce, setViewOnce] = useState(false);
+  // Made and revoked in the same effect, so a re-run (React dev mode) never leaves dead previews.
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {
+    const made = files.map((f) => (/^(image|video)\//.test(f.type) ? URL.createObjectURL(f) : null));
+    setUrls(made);
+    return () => made.forEach((u) => u && URL.revokeObjectURL(u));
+  }, [files]);
 
   const file = files[index];
   const kind = fileKind(file);
+  // View once: a single photo or video, without a caption (as on WhatsApp).
+  const canViewOnce = files.length === 1 && (kind === 'image' || kind === 'video');
+  const send = () => onSend(files, viewOnce ? '' : caption.trim(), { viewOnce: canViewOnce && viewOnce });
 
   return (
     <div className="attach-preview">
@@ -33,12 +43,25 @@ export default function AttachmentPreview({ files, onCancel, onSend }) {
       <div className="attach-bottom">
         <input
           autoFocus
-          value={caption}
+          value={viewOnce ? '' : caption}
+          disabled={viewOnce}
           onChange={(e) => setCaption(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onSend(files, caption.trim())}
-          placeholder="Add a caption…"
+          onKeyDown={(e) => e.key === 'Enter' && send()}
+          placeholder={viewOnce ? 'View once: can be opened one time' : 'Add a caption…'}
           maxLength={2000}
         />
+        {canViewOnce && (
+          <button
+            type="button"
+            className={`once-toggle ${viewOnce ? 'on' : ''}`}
+            aria-pressed={viewOnce}
+            aria-label="View once"
+            title="View once"
+            onClick={() => setViewOnce((v) => !v)}
+          >
+            <OnceIcon size={24} />
+          </button>
+        )}
         {files.length > 1 && (
           <div className="attach-thumbs">
             {files.map((f, i) => (
@@ -48,7 +71,7 @@ export default function AttachmentPreview({ files, onCancel, onSend }) {
             ))}
           </div>
         )}
-        <button className="send-btn big" onClick={() => onSend(files, caption.trim())} aria-label="Send">
+        <button className="send-btn big" onClick={send} aria-label="Send">
           <Send size={22} />
           {files.length > 1 && <span className="badge">{files.length}</span>}
         </button>

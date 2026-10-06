@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Check, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
+import { BarChart3, Camera, Check, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
 import EmojiPicker from './EmojiPicker.jsx';
 import AttachmentPreview from './AttachmentPreview.jsx';
 import Menu from '../common/Menu.jsx';
 import Avatar from '../common/Avatar.jsx';
+import { PollComposer } from './Poll.jsx';
 import { MENTION_TOKEN, atName, mentionName, mentionToken, plainMentions } from '../../lib/mentions.js';
 import { fileKind, formatDuration } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
@@ -83,6 +84,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [attachMenu, setAttachMenu] = useState(null);
   const [files, setFiles] = useState(null);
+  const [pollOpen, setPollOpen] = useState(false);
   const input = useRef(null);
   const fileInputs = { media: useRef(null), doc: useRef(null), camera: useRef(null) };
   const typing = useRef({ last: 0, idle: null });
@@ -258,11 +260,11 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     });
   }
 
-  function sendFiles(list, caption) {
+  function sendFiles(list, caption, { viewOnce = false } = {}) {
     list.forEach((file, i) => {
       const kind = fileKind(file);
       if (file.size > 50 * 1024 * 1024) return toast(`${file.name} is larger than 50 MB`, 'error');
-      sendMedia(conv.id, file, { type: kind, text: i === 0 ? caption : '', replyTo: i === 0 ? replyTo : null });
+      sendMedia(conv.id, file, { type: kind, text: i === 0 ? caption : '', replyTo: i === 0 ? replyTo : null, viewOnce });
     });
     setComposer(conv.id, { replyTo: null });
     setFiles(null);
@@ -364,7 +366,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
                 aria-label="Attach"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  setAttachMenu({ x: r.left, y: r.top - 170 });
+                  setAttachMenu({ x: r.left, y: r.top - 215 });
                 }}
               >
                 <Paperclip size={21} />
@@ -412,6 +414,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
             { label: 'Photos & videos', icon: Image, onClick: () => fileInputs.media.current.click() },
             { label: 'Camera', icon: Camera, onClick: () => fileInputs.camera.current.click() },
             { label: 'Document', icon: FileText, onClick: () => fileInputs.doc.current.click() },
+            { label: 'Poll', icon: BarChart3, onClick: () => setPollOpen(true) },
           ]}
         />
       )}
@@ -436,6 +439,16 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
         />
       ))}
 
+      {pollOpen && (
+        <PollComposer
+          onClose={() => setPollOpen(false)}
+          onSend={(poll) => {
+            sendMessage(conv.id, { type: 'poll', poll, replyTo });
+            setComposer(conv.id, { replyTo: null });
+            setPollOpen(false);
+          }}
+        />
+      )}
       {files && <AttachmentPreview files={files} onCancel={() => setFiles(null)} onSend={sendFiles} />}
     </div>
   );

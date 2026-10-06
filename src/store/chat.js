@@ -33,6 +33,7 @@ const keyOf = (m) => m.clientId || m.id;
 
 // Files for optimistic media messages, kept outside state so a failed upload can be retried.
 const pendingFiles = new Map();
+const voteSeq = new Map(); // poll message id -> latest vote request number
 const typingTimers = new Map();
 // clientIds currently being sent, so a retry never runs twice in parallel.
 const inFlight = new Set();
@@ -521,7 +522,7 @@ export const useChat = create((set, get) => {
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
-    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false }) {
+    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll }) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -533,6 +534,9 @@ export const useChat = create((set, get) => {
         media: media || null,
         replyTo: replyTo ? replyPreview(replyTo) : null,
         forwarded,
+        ...(poll && {
+          poll: { question: poll.question, options: poll.options.map((text, i) => ({ id: String(i), text })), multiple: !!poll.multiple, votes: [] },
+        }),
         reactions: [],
         starred: false,
         createdAt: new Date().toISOString(),
@@ -545,7 +549,7 @@ export const useChat = create((set, get) => {
     },
 
     /** Optimistically shows a media message while the file uploads, then sends it. */
-    sendMedia(convId, file, { type, text = '', duration, replyTo } = {}) {
+    sendMedia(convId, file, { type, text = '', duration, replyTo, viewOnce = false } = {}) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -557,6 +561,7 @@ export const useChat = create((set, get) => {
         media: { url: URL.createObjectURL(file), name: file.name, size: file.size, mime: file.type, duration },
         replyTo: replyTo ? replyPreview(replyTo) : null,
         forwarded: false,
+        ...(viewOnce && { viewOnce: true, openedBy: [] }),
         reactions: [],
         starred: false,
         createdAt: new Date().toISOString(),
@@ -597,8 +602,9 @@ export const useChat = create((set, get) => {
             name: msg.media?.name,
             onProgress: (progress) => patchItem(convId, msg.clientId, { progress }),
           });
-          // Keep our own copy under the real URL so it never needs downloading again.
-          await rememberMedia(uploaded.url, file);
+          // Keep our own copy under the real URL so it never needs downloading again
+          // (not view-once media: it isn't kept on the phone).
+          if (!msg.viewOnce) await rememberMedia(uploaded.url, file);
           pendingFiles.delete(msg.clientId);
           deleteStoredMedia(pendingKey(msg.clientId));
           patchItem(convId, msg.clientId, {
@@ -720,6 +726,36 @@ export const useChat = create((set, get) => {
       } catch (e) {
         patchItem(convId, msg.id, { reactions: before }); // put it back
         toast(isNetworkError(e) ? 'You’re offline. Try reacting again when connected.' : e.message, 'error');
+      }
+    },
+
+    /** View once: fetch the photo/video (allowed once) and show it full screen. */
+    async openViewOnce(msg) {
+      try {
+        const { url, type } = await api(`/api/messages/${msg.id}/open`, { method: 'POST' });
+        patchItem(msg.conversationId, msg.id, { openedBy: [...new Set([...(msg.openedBy || []), meId()])] });
+        useUI.getState().setViewOnce({ url, type });
+      } catch (e) {
+        if (e.status === 410) patchItem(msg.conversationId, msg.id, { openedBy: [...new Set([...(msg.openedBy || []), meId()])] });
+        toast(e.message, 'error');
+      }
+    },
+
+    /** Vote in a poll (`options` replaces my vote; [] takes it back). Shown at once. */
+    async vote(msg, options) {
+      const me = meId();
+      const before = msg.poll;
+      const votes = [...before.votes.filter((v) => v.user !== me), ...options.map((option) => ({ user: me, option }))];
+      patchItem(msg.conversationId, msg.id, { poll: { ...before, votes } });
+      // Only the reply to my latest tap counts (quick taps can answer out of order).
+      const seq = (voteSeq.get(msg.id) || 0) + 1;
+      voteSeq.set(msg.id, seq);
+      try {
+        const { poll } = await api(`/api/messages/${msg.id}/vote`, { method: 'POST', body: { options } });
+        if (voteSeq.get(msg.id) === seq) patchItem(msg.conversationId, msg.id, { poll });
+      } catch (e) {
+        if (voteSeq.get(msg.id) === seq) patchItem(msg.conversationId, msg.id, { poll: before });
+        toast(e.message, 'error');
       }
     },
 
@@ -1045,6 +1081,8 @@ export function previewText(msg) {
     return `📞 ${title}${detail ? ` · ${detail}` : ''}`;
   }
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
+  if (msg.type === 'poll') return `📊 ${msg.poll?.question || 'Poll'}`;
+  if (msg.viewOnce) return msg.type === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)';
   const text = plainMentions(msg.text, useChat.getState().conversations[msg.conversationId], meId());
   if (msg.type === 'text' || msg.type === 'system') return text;
   if (msg.type === 'file') return labels.file + (msg.media?.name || 'Document');

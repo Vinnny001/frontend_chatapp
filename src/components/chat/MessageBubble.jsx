@@ -42,6 +42,8 @@ import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { inviteCodeOf } from '../../lib/invites.js';
+import { PollBody } from './Poll.jsx';
+import { ViewOnceBody } from './ViewOnce.jsx';
 import { useCall } from '../../store/call.js';
 import { useGroupCall } from '../../store/groupCall.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -417,6 +419,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
   const age = Date.now() - Date.parse(msg.createdAt);
   const emojiOnly = msg.type === 'text' && !deleted && msg.text.length <= 12 && EMOJI_ONLY.test(msg.text);
   const hasMedia = !deleted && msg.media;
+  const special = msg.viewOnce || msg.type === 'poll'; // not forwarded, no thumbnails
   const pinned = !!conv.pinned?.some((p) => p.messageId === msg.id);
 
   const reply = () => chat.setComposer(conv.id, { replyTo: msg, editing: null });
@@ -437,7 +440,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             icon: Copy,
             onClick: () => navigator.clipboard?.writeText(plainMentions(msg.text, conv, me)).then(() => toast('Copied'), () => toast('Could not copy')),
           },
-          { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
+          !special && { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
           { label: msg.starred ? 'Unstar' : 'Star', icon: msg.starred ? StarOff : Star, onClick: () => chat.toggleStar(msg) },
           canSendIn(conv, me) && !conv.me?.blocked && {
             label: pinned ? 'Unpin' : 'Pin',
@@ -490,7 +493,9 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
       {...touch}
     >
       <div className="msg-stack" style={dx ? { transform: `translateX(${dx}px)` } : undefined}>
-        <div className={`bubble ${emojiOnly ? 'emoji-only' : ''} ${hasMedia && !msg.text && msg.type !== 'file' && msg.type !== 'voice' ? 'media-only' : ''}`}>
+        <div
+          className={`bubble ${emojiOnly ? 'emoji-only' : ''} ${hasMedia && !special && !msg.text && msg.type !== 'file' && msg.type !== 'voice' ? 'media-only' : ''} ${msg.type === 'poll' ? 'poll-bubble' : ''}`}
+        >
           {!grouped && sender && <div className="sender-name" style={{ color: `hsl(${[...sender.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360} 60% 45%)` }}>{sender.name}</div>}
           {msg.forwarded && !deleted && (
             <div className="forwarded">
@@ -506,7 +511,8 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             </span>
           ) : (
             <>
-              {hasMedia && <Media msg={msg} />}
+              {msg.viewOnce ? <ViewOnceBody msg={msg} conv={conv} me={me} /> : hasMedia && <Media msg={msg} />}
+              {msg.poll && <PollBody msg={msg} conv={conv} me={me} />}
               {msg.text && (
                 <span className="text">
                   <LongText text={msg.text} conv={conv} me={me} />

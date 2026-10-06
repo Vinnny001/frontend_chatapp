@@ -45,6 +45,7 @@ export const useUI = create((set, get) => ({
   profilePreview: null, // conversation id whose photo was tapped in the chat list
   adminOpen: false,
   joinCode: null, // a group invite being looked at (from a link)
+  viewOnce: null, // { url, type } of a view-once photo/video being shown
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -68,6 +69,7 @@ export const useUI = create((set, get) => ({
   setProfilePreview: (profilePreview) => set({ profilePreview }),
   setAdminOpen: (adminOpen) => set({ adminOpen }),
   setJoinCode: (joinCode) => set({ joinCode }),
+  setViewOnce: (viewOnce) => set({ viewOnce }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;

@@ -3,13 +3,31 @@ import { Mic, Pause, Play } from 'lucide-react';
 import { formatDuration } from '../../lib/format.js';
 
 const SPEEDS = [1, 1.5, 2];
+const SPEED_KEY = 'voiceSpeed';
+
+// One speed for every voice note, remembered like WhatsApp's.
+function savedSpeed() {
+  try {
+    const v = Number(localStorage.getItem(SPEED_KEY));
+    return SPEEDS.includes(v) ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** When a voice note ends, the next one further down the chat starts (as on WhatsApp). */
+function playNext(current) {
+  const all = [...document.querySelectorAll('.voice')];
+  const next = all[all.indexOf(current.closest('.voice')) + 1];
+  next?.querySelector('.voice-play:not(:disabled)')?.click();
+}
 
 export default function VoicePlayer({ src, duration: knownDuration, progress: uploadProgress }) {
   const audio = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(knownDuration || 0);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(savedSpeed);
 
   useEffect(() => {
     const a = audio.current;
@@ -19,6 +37,7 @@ export default function VoicePlayer({ src, duration: knownDuration, progress: up
     const onEnd = () => {
       setPlaying(false);
       setTime(0);
+      playNext(a);
     };
     a.addEventListener('timeupdate', onTime);
     a.addEventListener('loadedmetadata', onMeta);
@@ -38,7 +57,8 @@ export default function VoicePlayer({ src, duration: knownDuration, progress: up
     if (playing) return a.pause();
     // Only one voice note plays at a time.
     document.querySelectorAll('audio').forEach((other) => other !== a && other.pause());
-    a.playbackRate = speed;
+    a.playbackRate = savedSpeed(); // may have been changed on another voice note
+    setSpeed(a.playbackRate);
     a.play().catch(() => {});
   }
 
@@ -46,6 +66,11 @@ export default function VoicePlayer({ src, duration: knownDuration, progress: up
     e.stopPropagation();
     const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
     setSpeed(next);
+    try {
+      localStorage.setItem(SPEED_KEY, String(next));
+    } catch {
+      /* not saved: still applies to this one */
+    }
     if (audio.current) audio.current.playbackRate = next;
   }
 

@@ -22,6 +22,7 @@ import InAppBanner from './components/common/InAppBanner.jsx';
 import ProfilePreview from './components/sidebar/ProfilePreview.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
 import JoinGroupDialog from './components/chat/JoinGroupDialog.jsx';
+import { ViewOnceViewer } from './components/chat/ViewOnce.jsx';
 import { inviteCodeOf } from './lib/invites.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
@@ -48,7 +49,8 @@ function useBackButton() {
     const handle = CapacitorApp.addListener('backButton', () => {
       const ui = useUI.getState();
       const chat = useChat.getState();
-      if (ui.joinCode) ui.setJoinCode(null);
+      if (ui.viewOnce) ui.setViewOnce(null);
+      else if (ui.joinCode) ui.setJoinCode(null);
       else if (ui.profilePreview) ui.setProfilePreview(null);
       else if (ui.phoneMenu) ui.closePhoneMenu();
       else if (ui.viewer) ui.closeViewer();
@@ -123,6 +125,7 @@ function Messenger({ token }) {
       <ProfilePreview />
       <AdminPanel />
       <JoinGroupDialog />
+      <ViewOnceViewer />
     </div>
   );
 }

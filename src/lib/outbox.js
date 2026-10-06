@@ -24,6 +24,8 @@ export function sendPayload(msg) {
     media: media && !/^(blob|pending):/.test(String(media.url)) ? media : undefined,
     replyTo: msg.replyTo?.id ?? null,
     forwarded: !!msg.forwarded,
+    ...(msg.viewOnce && { viewOnce: true }),
+    ...(msg.poll && { poll: { question: msg.poll.question, options: msg.poll.options.map((o) => o.text), multiple: !!msg.poll.multiple } }),
   };
 }
 
