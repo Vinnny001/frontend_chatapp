@@ -56,6 +56,10 @@ For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overvie
 - In a group, type **@** to pick a member (filter by name, @username or number; arrows/Enter or tap). They see it highlighted as **@You** and get a notification even if they muted the group; the chat list shows an **@** badge until they read it.
 - **Pin** / **Unpin** in a message's menu (up to 3 per chat; a 4th replaces the oldest). The bar under the chat header shows the newest pin; tap it to jump there, and again for the next one. In "only admins can send" groups, only admins can pin.
 
+## Group invite links
+
+Group admins: group info → **Invite via link** to share, copy or reset the link (resetting stops the old one at once). The link is `https://<api>/join/<code>`, a small page served by the API with **Open in ChatApp**, which opens the app through `chatapp://join/<code>` (registered in `AndroidManifest.xml`). In the app, the link (tapped in a chat or opened from another app, even when the app was closed) shows the group's photo, name, description and member count, with **Join group**.
+
 ## Block and report
 
 In a contact's info: **Block** / **Unblock** and **Report** (reason, details, "Also block"). A blocked chat shows "You blocked this contact. Tap to unblock." instead of the message box. **Settings → Privacy → Blocked contacts** lists them.

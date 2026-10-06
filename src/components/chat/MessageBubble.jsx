@@ -41,6 +41,7 @@ import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
+import { inviteCodeOf } from '../../lib/invites.js';
 import { useCall } from '../../store/call.js';
 import { useGroupCall } from '../../store/groupCall.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -80,7 +81,21 @@ function Linked({ text }) {
       );
     }
     return (
-      <a key={i} href={part.url} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}>
+      <a
+        key={i}
+        href={part.url}
+        target="_blank"
+        rel="noreferrer noopener"
+        onClick={(e) => {
+          e.stopPropagation();
+          // Group invite links open the join card here instead of the browser.
+          const code = inviteCodeOf(part.url);
+          if (code) {
+            e.preventDefault();
+            useUI.getState().setJoinCode(code);
+          }
+        }}
+      >
         {part.url}
       </a>
     );

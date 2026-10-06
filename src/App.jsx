@@ -21,6 +21,8 @@ import Toasts from './components/common/Toasts.jsx';
 import InAppBanner from './components/common/InAppBanner.jsx';
 import ProfilePreview from './components/sidebar/ProfilePreview.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
+import JoinGroupDialog from './components/chat/JoinGroupDialog.jsx';
+import { inviteCodeOf } from './lib/invites.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
 
@@ -46,7 +48,8 @@ function useBackButton() {
     const handle = CapacitorApp.addListener('backButton', () => {
       const ui = useUI.getState();
       const chat = useChat.getState();
-      if (ui.profilePreview) ui.setProfilePreview(null);
+      if (ui.joinCode) ui.setJoinCode(null);
+      else if (ui.profilePreview) ui.setProfilePreview(null);
       else if (ui.phoneMenu) ui.closePhoneMenu();
       else if (ui.viewer) ui.closeViewer();
       else if (ui.forwarding) ui.setForwarding(null);
@@ -55,6 +58,24 @@ function useBackButton() {
       else if (chat.activeId) chat.closeConversation();
       else CapacitorApp.exitApp();
     });
+    return () => {
+      handle.then((h) => h.remove());
+    };
+  }, []);
+}
+
+/** Group invite links opened from other apps (chatapp://join/<code>), also on a cold start. */
+function useInviteLinks() {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+    const open = (url) => {
+      const code = inviteCodeOf(url);
+      if (code) useUI.getState().setJoinCode(code);
+    };
+    CapacitorApp.getLaunchUrl()
+      .then((r) => open(r?.url))
+      .catch(() => {});
+    const handle = CapacitorApp.addListener('appUrlOpen', ({ url }) => open(url));
     return () => {
       handle.then((h) => h.remove());
     };
@@ -81,6 +102,7 @@ function LockedCall() {
 function Messenger({ token }) {
   useRealtime(token);
   useBackButton();
+  useInviteLinks();
   const activeId = useChat((s) => s.activeId);
   const infoOpen = useUI((s) => s.infoOpen);
   const lockedCall = useCall((s) => !!s.external?.locked);
@@ -100,6 +122,7 @@ function Messenger({ token }) {
       <InAppBanner />
       <ProfilePreview />
       <AdminPanel />
+      <JoinGroupDialog />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, Ban, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, Ban, Link2, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
@@ -7,6 +7,7 @@ import Modal from '../common/Modal.jsx';
 import SearchPanel from './SearchPanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
 import ReportDialog from '../common/ReportDialog.jsx';
+import InviteLinkDialog from './InviteLinkDialog.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
@@ -358,6 +359,8 @@ function InfoContent({ conv }) {
   const setInfoOpen = useUI((s) => s.setInfoOpen);
   const startCall = useCall((s) => s.startCall);
   const [adding, setAdding] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const closeInvite = useCallback(() => setInviting(false), []);
   const [editingDesc, setEditingDesc] = useState(false);
   const [desc, setDesc] = useState(conv.description);
   const [editingName, setEditingName] = useState(false);
@@ -544,6 +547,14 @@ function InfoContent({ conv }) {
               <span className="person-name">Add members</span>
             </button>
           )}
+          {amAdmin && (
+            <button className="person-row action" onClick={() => setInviting(true)}>
+              <span className="action-icon">
+                <Link2 size={20} />
+              </span>
+              <span className="person-name">Invite via link</span>
+            </button>
+          )}
           {members.map((m) => (
             <MemberRow key={m.id} member={m} conv={conv} me={me} amAdmin={amAdmin} />
           ))}
@@ -565,6 +576,7 @@ function InfoContent({ conv }) {
       </section>
 
       {adding && <AddMembersModal conv={conv} onClose={() => setAdding(false)} />}
+      {inviting && <InviteLinkDialog conv={conv} onClose={closeInvite} />}
     </>
   );
 }

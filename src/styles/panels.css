@@ -1781,3 +1781,49 @@ button.composer-locked.blocked {
 .link-btn.danger {
   color: var(--danger);
 }
+
+/* Group invite links */
+.join-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 8px 8px;
+  text-align: center;
+}
+.join-card h3 {
+  margin: 8px 0 0;
+  font-size: 20px;
+}
+.join-card .hint {
+  margin: 0;
+}
+.join-card .btn {
+  margin-top: 12px;
+  min-width: 180px;
+}
+.join-about {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.join-dead {
+  color: var(--text-3);
+}
+.invite-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 4px 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--accent);
+  word-break: break-all;
+  font-size: 14px;
+}
+.invite-link svg {
+  flex: none;
+}
+.invite-actions .danger .person-name {
+  color: var(--danger, #d93025);
+}

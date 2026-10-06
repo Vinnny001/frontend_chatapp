@@ -44,6 +44,7 @@ export const useUI = create((set, get) => ({
   banner: null,
   profilePreview: null, // conversation id whose photo was tapped in the chat list
   adminOpen: false,
+  joinCode: null, // a group invite being looked at (from a link)
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -66,6 +67,7 @@ export const useUI = create((set, get) => ({
   hideBanner: () => set({ banner: null }),
   setProfilePreview: (profilePreview) => set({ profilePreview }),
   setAdminOpen: (adminOpen) => set({ adminOpen }),
+  setJoinCode: (joinCode) => set({ joinCode }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;
