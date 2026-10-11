@@ -214,6 +214,10 @@ export default function SettingsPanel() {
 
       <h3 className="section-label">Privacy</h3>
       <div className="settings-group">
+        <button className="settings-link" onClick={() => useUI.getState().openPanel('devices')}>
+          <span>Linked devices</span>
+          <ChevronRight size={18} />
+        </button>
         <button className="settings-link" onClick={() => useUI.getState().openPanel('blocked')}>
           <span>Blocked contacts</span>
           <ChevronRight size={18} />

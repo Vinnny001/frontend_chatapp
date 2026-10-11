@@ -1827,3 +1827,129 @@ button.composer-locked.blocked {
 .invite-actions .danger .person-name {
   color: var(--danger, #d93025);
 }
+
+/* Linked devices & sign-in approval */
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+.approval {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 8px 0;
+}
+.approval h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+.approval p {
+  margin: 0;
+}
+.approval-icon {
+  color: var(--accent);
+}
+.approval-icon.muted {
+  color: var(--text-3);
+}
+.approval-number {
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--accent);
+  line-height: 1.1;
+  margin: 6px 0;
+}
+.approval-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.approval .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.approval-email {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.approval-email .btn {
+  width: 100%;
+}
+.approval-cancel {
+  margin-top: 6px;
+  color: var(--text-2) !important;
+}
+.login-request-body {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 4px 8px 8px;
+}
+.login-request-body p {
+  margin: 0;
+}
+.login-request-icon {
+  color: var(--accent);
+}
+.login-request-choices {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0 10px;
+}
+.login-request-choice {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 700;
+}
+.login-request-choice:hover {
+  background: var(--accent-soft);
+}
+.login-request-body .btn-danger {
+  width: 100%;
+}
+.devices-intro {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 20px 8px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.devices-intro svg {
+  color: var(--accent);
+}
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.device-row .person-info {
+  flex: 1;
+  min-width: 0;
+}
+.devices-none {
+  padding: 0 16px;
+}
+.settings-link.danger {
+  color: var(--danger);
+}
+.devices-out-all {
+  margin-top: 8px;
+  padding-left: 26px;
+  padding-right: 26px;
+}

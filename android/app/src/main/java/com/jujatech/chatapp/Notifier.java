@@ -50,12 +50,14 @@ final class Notifier {
     static final String CH_MESSAGES = "messages";
     static final String CH_CALLS = "incoming_calls";
     static final String CH_MISSED = "missed_calls";
+    static final String CH_SECURITY = "security";
     static final String GROUP = "chats";
     static final String REPLY_KEY = "reply_text";
 
     private static final String TAG_CHAT = "chat:";
     private static final String TAG_CALL = "call:";
     private static final String TAG_MISSED = "missed:";
+    private static final String TAG_LOGIN = "login:";
     private static final int ID = 1;
     private static final int MAX_HISTORY = 12;
     private static final long RING_MS = 50_000;
@@ -86,6 +88,13 @@ final class Notifier {
                 break;
             case "call":
                 if (!Session.foreground) showIncomingCall(context, data);
+                break;
+            case "login_request":
+                // Shown even with the app open: the app also shows its own prompt.
+                showLoginRequest(context, data);
+                break;
+            case "login_request_done":
+                NotificationManagerCompat.from(context).cancel(TAG_LOGIN + data.get("requestId"), ID);
                 break;
             case "call_end":
                 cancelCall(context, data.get("callId"));
@@ -121,6 +130,13 @@ final class Notifier {
             channel.setVibrationPattern(new long[] { 0, 1000, 1000 });
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             channel.setBypassDnd(false);
+            manager.createNotificationChannel(channel);
+        }
+        if (manager.getNotificationChannel(CH_SECURITY) == null) {
+            NotificationChannel channel = new NotificationChannel(CH_SECURITY, "Sign-in requests", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("A new device asks to sign in to your account");
+            channel.enableVibration(true);
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
             manager.createNotificationChannel(channel);
         }
         if (manager.getNotificationChannel(CH_MISSED) == null) {
@@ -484,6 +500,32 @@ final class Notifier {
         missed(context).edit().clear().apply();
         inbox(context).edit().clear().apply(); // signed out: don't hand them to the next account
         NotificationManagerCompat.from(context).cancelAll();
+    }
+
+    // ------------------------------------------------------------------ sign-in requests
+
+    /** "Edge on Windows wants to sign in": tapping it opens ChatApp, which asks for the number. */
+    private static void showLoginRequest(Context context, Map<String, String> d) {
+        String requestId = d.get("requestId");
+        if (requestId == null || !canNotify(context)) return;
+        long sentAt = parseLong(d.get("sentAt"), System.currentTimeMillis());
+        if (System.currentTimeMillis() - sentAt > 10 * 60_000) return; // the request has expired
+        String device = d.get("deviceName") == null || d.get("deviceName").isEmpty() ? "A new device" : d.get("deviceName");
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_SECURITY)
+            .setSmallIcon(R.drawable.ic_stat_chat)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle("New sign-in request")
+            .setContentText(device + " wants to sign in to your account. Tap to review.")
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(device
+                + " wants to sign in to your ChatApp account. Tap to approve or block it. If it isn't you, block it and change your password."))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setAutoCancel(true)
+            .setTimeoutAfter(10 * 60_000)
+            .setContentIntent(activity(context, "home", null, null, null));
+        //noinspection MissingPermission (checked by canNotify)
+        NotificationManagerCompat.from(context).notify(TAG_LOGIN + requestId, ID, builder.build());
     }
 
     // ------------------------------------------------------------------ calls

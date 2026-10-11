@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api, setApiToken, setUnauthorizedHandler } from '../lib/api.js';
 import { storage } from '../lib/storage.js';
 import { unregisterPush } from '../lib/push.js';
+import { deviceInfo, tokenDeviceId } from '../lib/device.js';
 
 const initialToken = storage.get('auth.token');
 setApiToken(initialToken);
@@ -9,10 +10,52 @@ setApiToken(initialToken);
 export const useAuth = create((set, get) => ({
   token: initialToken,
   user: storage.get('auth.user'),
+  // A sign-in waiting for approval on another device: { request: { id, secret, match, expiresAt }, devices, email }
+  approval: null,
 
   async login(identifier, password) {
-    const { token, user } = await api('/api/auth/login', { method: 'POST', body: { identifier, password } });
-    get().setSession(token, user);
+    const res = await api('/api/auth/login', { method: 'POST', body: { identifier, password, device: deviceInfo() } });
+    if (res.approvalRequired) return set({ approval: { request: res.request, devices: res.devices, email: res.email } });
+    get().setSession(res.token, res.user);
+  },
+
+  /** Asks whether the waiting sign-in was approved: 'pending' | 'denied' | 'expired' (or signs in). */
+  async checkApproval() {
+    const a = get().approval;
+    if (!a) return null;
+    const res = await api(`/api/auth/login-requests/${a.request.id}`, { headers: { 'x-request-secret': a.request.secret } });
+    if (res.status === 'approved') {
+      set({ approval: null });
+      get().setSession(res.token, res.user);
+    }
+    return res.status;
+  },
+
+  /** Can't reach the other device: email a code instead. */
+  emailApprovalCode() {
+    const { request } = get().approval;
+    return api(`/api/auth/login-requests/${request.id}/email`, { method: 'POST', body: { secret: request.secret } });
+  },
+
+  async approveWithEmailCode(code) {
+    const { request } = get().approval;
+    const res = await api(`/api/auth/login-requests/${request.id}/email/verify`, { method: 'POST', body: { secret: request.secret, code } });
+    set({ approval: null });
+    get().setSession(res.token, res.user);
+  },
+
+  cancelApproval() {
+    const a = get().approval;
+    set({ approval: null });
+    if (a) api(`/api/auth/login-requests/${a.request.id}`, { method: 'DELETE', body: { secret: a.request.secret } }).catch(() => {});
+  },
+
+  /** Sessions from before linked devices: register this device once (keeps you signed in). */
+  async ensureDevice() {
+    const { token } = get();
+    if (!token || tokenDeviceId(token)) return;
+    const res = await api('/api/devices/register', { method: 'POST', body: deviceInfo() });
+    if (res.token) get().setSession(res.token, get().user);
   },
 
   async signup(data) {
@@ -22,7 +65,7 @@ export const useAuth = create((set, get) => ({
 
   /** Confirm the email with the 6-digit code (turns the pending login into a full one). */
   async verifyEmail(code) {
-    const { token, user } = await api('/api/auth/verify-email', { method: 'POST', body: { code } });
+    const { token, user } = await api('/api/auth/verify-email', { method: 'POST', body: { code, device: deviceInfo() } });
     get().setSession(token, user);
   },
 
@@ -33,7 +76,7 @@ export const useAuth = create((set, get) => ({
 
   /** New password with the emailed code; signs in. */
   async resetPassword(data) {
-    const { token, user } = await api('/api/auth/reset', { method: 'POST', body: data });
+    const { token, user } = await api('/api/auth/reset', { method: 'POST', body: { ...data, device: deviceInfo() } });
     get().setSession(token, user);
   },
 
@@ -54,8 +97,10 @@ export const useAuth = create((set, get) => ({
     get().setUser(user);
   },
 
-  logout() {
+  /** Signs out here; `server: false` when the server already ended this session (signed out remotely). */
+  logout({ server = true } = {}) {
     unregisterPush(); // uses the current login token, so it must start before it's cleared
+    if (server && get().token) api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setApiToken(null);
     storage.set('auth.token', null);
     storage.set('auth.user', null);
@@ -63,6 +108,6 @@ export const useAuth = create((set, get) => ({
   },
 }));
 
-setUnauthorizedHandler(() => useAuth.getState().logout());
+setUnauthorizedHandler(() => useAuth.getState().logout({ server: false }));
 
 export const useMe = () => useAuth((s) => s.user);

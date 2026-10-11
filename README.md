@@ -56,6 +56,13 @@ For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overvie
 - In a group, type **@** to pick a member (filter by name, @username or number; arrows/Enter or tap). They see it highlighted as **@You** and get a notification even if they muted the group; the chat list shows an **@** badge until they read it.
 - **Pin** / **Unpin** in a message's menu (up to 3 per chat; a 4th replaces the oldest). The bar under the chat header shows the newest pin; tap it to jump there, and again for the next one. In "only admins can send" groups, only admins can pin.
 
+## Linked devices and sign-in approval
+
+- Signing in on a new device while another one is signed in needs **approval**: the new device shows a number, and your signed-in devices ask "Edge on Windows wants to sign in" (a notification on phones, even with the app closed). Tap the matching number of three; a wrong number blocks the sign-in. Can't reach your other device? **Email me a code** on the waiting screen.
+- Every new sign-in sends an email with the device, time and network address, and a **This wasn't me** link that signs that device out.
+- **Settings → Privacy → Linked devices** lists every signed-in device; sign one out, or all others. A signed-out device drops to the sign-in screen at once. Resetting your password signs out every other device.
+- Sessions from before linked devices register themselves automatically (shown as "Signed in before linked devices").
+
 ## Polls, view once, voice notes
 
 - **Polls**: 📎 → **Poll**: a question, 2–12 options (a new row appears as you fill them), and "Allow multiple answers". Tap an option to vote, tap again to take it back; counts and bars update live for everyone. **View votes** shows who picked what.

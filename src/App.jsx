@@ -23,6 +23,7 @@ import ProfilePreview from './components/sidebar/ProfilePreview.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
 import JoinGroupDialog from './components/chat/JoinGroupDialog.jsx';
 import { ViewOnceViewer } from './components/chat/ViewOnce.jsx';
+import LoginRequestPrompt from './components/LoginRequestPrompt.jsx';
 import { inviteCodeOf } from './lib/invites.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
@@ -105,6 +106,10 @@ function Messenger({ token }) {
   useRealtime(token);
   useBackButton();
   useInviteLinks();
+  // Sessions from before linked devices register this device once.
+  useEffect(() => {
+    useAuth.getState().ensureDevice().catch(() => {});
+  }, []);
   const activeId = useChat((s) => s.activeId);
   const infoOpen = useUI((s) => s.infoOpen);
   const lockedCall = useCall((s) => !!s.external?.locked);
@@ -126,6 +131,7 @@ function Messenger({ token }) {
       <AdminPanel />
       <JoinGroupDialog />
       <ViewOnceViewer />
+      <LoginRequestPrompt />
     </div>
   );
 }

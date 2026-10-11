@@ -3,6 +3,7 @@ import { Lock, MessageCircle, Phone, Sparkles, Zap } from 'lucide-react';
 import { useAuth } from '../store/auth.js';
 import UsernameInput from './common/UsernameInput.jsx';
 import ForgotPassword from './ForgotPassword.jsx';
+import ApprovalScreen from './ApprovalScreen.jsx';
 
 const EMPTY = { name: '', username: '', email: '', phone: '', gender: '', password: '', confirm: '', identifier: '' };
 
@@ -13,6 +14,7 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [usernameOk, setUsernameOk] = useState(true);
   const { login, signup } = useAuth();
+  const waiting = useAuth((s) => !!s.approval);
 
   const field = (key) => ({
     value: form[key],
@@ -76,7 +78,9 @@ export default function AuthScreen() {
       </section>
 
       <section className="auth-card">
-        {mode === 'forgot' ? (
+        {waiting ? (
+          <ApprovalScreen />
+        ) : mode === 'forgot' ? (
           <ForgotPassword initialEmail={form.identifier} onBack={() => switchMode('login')} />
         ) : (
         <>

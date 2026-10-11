@@ -14,6 +14,7 @@ import { useCall } from '../store/call.js';
 import { useGroupCall } from '../store/groupCall.js';
 import { useChat } from '../store/chat.js';
 import { toast } from '../store/ui.js';
+import { loginRequests } from '../components/LoginRequestPrompt.jsx';
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
 export function useRealtime(token) {
@@ -100,11 +101,18 @@ export function useRealtime(token) {
       else chat.retryPending();
       everConnected = true;
     });
-    socket.on('disconnect', () => chat.setConnection('offline'));
+    socket.on('disconnect', (reason) => {
+      chat.setConnection('offline');
+      // The server closed us (this device was signed out, or the account disabled): socket.io
+      // doesn't retry on its own. Reconnecting gets "unauthorized" (→ signed out here) or,
+      // for a server restart, simply reconnects.
+      if (reason === 'io server disconnect') setTimeout(() => socket.connect(), 500);
+    });
     socket.io.on('reconnect_attempt', () => chat.setConnection('connecting'));
     socket.on('connect_error', (err) => {
       chat.setConnection('offline');
-      if (err.message === 'unauthorized') useAuth.getState().logout();
+      // Signed out from another device (or the account was disabled).
+      if (err.message === 'unauthorized') useAuth.getState().logout({ server: false });
     });
 
     socket.on('message:new', (m) => useChat.getState().onMessageNew(m));
@@ -125,6 +133,8 @@ export function useRealtime(token) {
       useChat.getState().onGroupCall(p);
       useGroupCall.getState().onUpdate(p);
     });
+    socket.on('login:request', loginRequests.add);
+    socket.on('login:request:done', loginRequests.done);
     socket.on('call:incoming', calls.onIncoming);
     socket.on('call:accepted', calls.onAccepted);
     socket.on('call:rejected', calls.onRejected);
