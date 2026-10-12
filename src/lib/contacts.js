@@ -16,8 +16,33 @@ export const inviteText = () =>
 
 const digits = (p) => String(p).replace(/[^\d+]/g, '');
 const cacheKey = (userId) => `contacts.matches.${userId}`;
+const syncedKey = (userId) => `contacts.synced.${userId}`; // { deviceId: { entries, at } } from my other devices
 
 export const cachedContactMatches = (userId) => storage.get(cacheKey(userId));
+
+/**
+ * This device's address-book matches plus those my other devices shared over our encrypted
+ * channel (a computer has no address book: it shows my phone's names). This device's own
+ * names win when both have someone.
+ */
+export function contactMatchesFor(userId) {
+  const own = cachedContactMatches(userId);
+  const synced = storage.get(syncedKey(userId)) || {};
+  const byUser = new Map((own?.registered || []).map((e) => [e.user.id, e]));
+  for (const { entries } of Object.values(synced)) {
+    for (const e of entries || []) if (e.user?.id && e.user.id !== userId && !byUser.has(e.user.id)) byUser.set(e.user.id, { ...e, fromOtherDevice: true });
+  }
+  if (!own && !byUser.size) return null;
+  return { syncedAt: 0, invite: [], ...own, registered: [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+/** Contacts another of my devices shared (its latest list replaces its previous one). */
+export function applySyncedContacts(userId, deviceId, entries, at) {
+  const synced = storage.get(syncedKey(userId)) || {};
+  if (synced[deviceId] && Date.parse(synced[deviceId].at) > Date.parse(at)) return;
+  storage.set(syncedKey(userId), { ...synced, [deviceId]: { entries, at } });
+  publish(userId, contactMatchesFor(userId));
+}
 
 /** Latest contact matches, shared so every screen updates when a (background) sync finishes. */
 export const useContactMatches = create(() => ({ data: null, userId: null }));
@@ -26,7 +51,7 @@ const publish = (userId, data) => useContactMatches.setState({ userId, data });
 /** React hook: this user's contact matches (saved copy first, then live background syncs). */
 export function useContactMatchesFor(userId) {
   useEffect(() => {
-    if (useContactMatches.getState().userId !== userId) publish(userId, cachedContactMatches(userId));
+    if (useContactMatches.getState().userId !== userId) publish(userId, contactMatchesFor(userId));
   }, [userId]);
   return useContactMatches((s) => (s.userId === userId ? s.data : null));
 }
@@ -74,9 +99,14 @@ export async function syncContacts(userId) {
     invite: invite.sort((a, b) => a.name.localeCompare(b.name)),
   };
   storage.set(cacheKey(userId), result);
-  publish(userId, result);
+  publish(userId, contactMatchesFor(userId));
+  onAddressBookSynced(result);
   return result;
 }
+
+// Set by the app: share a fresh address-book read with my other devices.
+let onAddressBookSynced = () => {};
+export const setAddressBookListener = (fn) => (onAddressBookSynced = fn);
 
 const ASK_AGAIN_MS = 24 * 3600 * 1000;
 let running = null;

@@ -371,6 +371,7 @@ export const useChat = create((set, get) => {
     },
 
     upsertConversation(conv) {
+      if (conv?.type === 'self') return; // the hidden own-devices channel is never a chat
       const known = get().conversations[conv.id];
       set((s) => ({ conversations: { ...s.conversations, [conv.id]: present(conv) } }));
       if (!known) get().fetchPresence(conv.participants.map((p) => p.id));

@@ -12,6 +12,13 @@ import * as mls from './mls.js';
 import { dbName, deleteDb, openDb } from './db.js';
 import { forgetMediaKeys, registerMediaKey } from './files.js';
 import { MENTION_TOKEN } from '../mentions.js';
+import { publishContacts, pullSync, startSync, stopSync } from './sync.js';
+
+// Set by the app: where synced contacts go, and this phone's own address-book matches.
+const appHooks = { onContacts: () => {}, ownContacts: () => null, onHistory: () => {} };
+export function setSyncHooks(hooks) {
+  Object.assign(appHooks, hooks);
+}
 
 let session = null; // { userId, deviceId, db }
 // message id (or "c:"+clientId) -> { p: payload, fp, state, conv, sender, at }
@@ -54,13 +61,42 @@ async function startNow({ userId, deviceId }) {
     console.warn('[e2ee] setup failed; messages stay unencrypted on this device for now', err);
   }
   drainSoon();
+  // The encrypted channel between my own devices (history for new devices, contacts).
+  if (mls.active()) {
+    startSync({
+      deviceId,
+      db,
+      hooks: {
+        records: () => [...plain.entries()],
+        importRecords: importHistory,
+        onContacts: (...args) => appHooks.onContacts(...args),
+        ownContacts: () => appHooks.ownContacts(),
+      },
+    }).catch((err) => console.warn('[e2ee] own-devices channel unavailable', err));
+  }
 }
+
+/** History from another of my devices: what it decrypted (I couldn't: I joined later). */
+function importHistory(records) {
+  let added = 0;
+  for (const [id, rec] of records) {
+    if (typeof id !== 'string' || id.startsWith('c:') || rec?.state !== 'ok') continue;
+    if (plain.get(id)?.state === 'ok') continue;
+    remember(id, rec);
+    added++;
+  }
+  if (added) appHooks.onHistory(added);
+}
+
+export const pullOwnDevices = () => pullSync();
+export const shareContacts = (entries) => publishContacts(entries);
 
 /** Signed out: forget everything this device knew (its keys are worthless now anyway). */
 export async function stop({ wipe = false } = {}) {
   const s = session;
   session = null;
   if (wipe) starting = null;
+  stopSync();
   mls.stop();
   plain.clear();
   queue.clear();

@@ -5,7 +5,7 @@ import { connectSocket, disconnectSocket, setAppActive } from './socket.js';
 import { requestNotificationPermission } from './notify.js';
 import { clearCache, loadCache, saveCache } from './cache.js';
 import { closeLocalDb, openLocalDb } from './localdb.js';
-import { autoSyncContacts, cachedContactMatches, useContactMatches } from './contacts.js';
+import { applySyncedContacts, autoSyncContacts, cachedContactMatches, contactMatchesFor, setAddressBookListener, useContactMatches } from './contacts.js';
 import { loadSavedContacts, resetPeople } from '../store/people.js';
 import { setupPush } from './push.js';
 import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
@@ -29,12 +29,19 @@ export function useRealtime(token) {
 
     // 0) End-to-end encryption: this device's keys (decrypted messages show as they're ready).
     cleanups.push(e2ee.onRevealed((m) => useChat.getState().onRevealed(m)));
+    // My own devices share contacts and history over their encrypted channel.
+    e2ee.setSyncHooks({
+      onContacts: (deviceId, entries, at) => applySyncedContacts(userId, deviceId, entries, at),
+      ownContacts: () => cachedContactMatches(userId)?.registered || null,
+      onHistory: () => useChat.getState().refreshRevealed(),
+    });
+    setAddressBookListener((result) => e2ee.shareContacts(result.registered));
     const e2eeReady = e2ee.start({ userId, deviceId: tokenDeviceId(token) }).catch(() => {});
 
     // 1) Show the saved offline copy straight away, then refresh from the server.
     openLocalDb(userId);
     // Names people are shown under come from my contacts, so load those before the chats.
-    useContactMatches.setState({ userId, data: cachedContactMatches(userId) });
+    useContactMatches.setState({ userId, data: contactMatchesFor(userId) });
     loadSavedContacts(userId).catch(() => {}); // offline: the saved copy is used
     chat.hydrate(loadCache(userId));
     // Messages saved before the keys were loaded get their text once they are.
@@ -143,6 +150,7 @@ export function useRealtime(token) {
     });
     socket.on('mls:welcome', () => e2ee.onWelcome().then(() => useChat.getState().refreshRevealed()));
     socket.on('mls:roster', () => e2ee.forgetRosters());
+    socket.on('mls:sync', () => e2ee.pullOwnDevices());
     socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed
     socket.on('login:request', loginRequests.add);
     socket.on('login:request:done', loginRequests.done);
