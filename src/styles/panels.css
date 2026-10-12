@@ -2028,3 +2028,29 @@ button.composer-locked.blocked {
 .devices-sync {
   padding: 4px 16px 10px;
 }
+
+/* Encryption couldn't start on this device */
+.e2ee-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  color: var(--text);
+  font-size: 13px;
+}
+.e2ee-banner svg {
+  flex: none;
+  color: var(--danger);
+  margin-top: 1px;
+}
+.e2ee-banner small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+.e2ee-banner .link-btn {
+  flex: none;
+}

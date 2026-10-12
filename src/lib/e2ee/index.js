@@ -12,6 +12,7 @@ import * as mls from './mls.js';
 import { dbName, deleteDb, openDb } from './db.js';
 import { forgetMediaKeys, registerMediaKey } from './files.js';
 import { MENTION_TOKEN } from '../mentions.js';
+import { api } from '../api.js';
 import { publishContacts, pullSync, startSync, stopSync } from './sync.js';
 
 // Set by the app: where synced contacts go, and this phone's own address-book matches.
@@ -38,17 +39,59 @@ const payloadOf = (rec) => rec?.p || (rec?.text != null ? { type: 'text', text: 
 
 let starting = null; // { deviceId, promise }: one start per device, however often it's asked
 
+// Whether encryption is running on this device: { state: 'starting' | 'ready' | 'error', message }.
+let status = { state: 'idle' };
+const statusListeners = new Set();
+function setStatus(next) {
+  status = next;
+  statusListeners.forEach((fn) => fn(status));
+}
+export const getStatus = () => status;
+export function onStatus(fn) {
+  statusListeners.add(fn);
+  return () => statusListeners.delete(fn);
+}
+
+/** Tells the server why encryption couldn't start here (so it can be looked into), and shows it. */
+function failed(stage, err) {
+  const message = String(err?.message || err || 'Unknown error').slice(0, 500);
+  console.warn(`[e2ee] ${stage} failed:`, err);
+  setStatus({ state: 'error', stage, message });
+  api('/api/mls/diagnostic', { method: 'POST', body: { stage, message, browser: navigator.userAgent.slice(0, 300) } }).catch(() => {});
+}
+
 export function start({ userId, deviceId }) {
-  if (!deviceId || !window.indexedDB) return Promise.resolve();
+  if (!deviceId) return Promise.resolve();
+  if (!window.indexedDB) {
+    failed('storage', 'This browser has no IndexedDB storage (private mode or storage switched off)');
+    return Promise.resolve();
+  }
   if (starting?.deviceId === deviceId) return starting.promise;
-  const promise = startNow({ userId, deviceId });
+  const promise = startNow({ userId, deviceId }).catch((err) => {
+    failed('start', err);
+    starting = null; // a later retry starts again (a failure is never kept)
+  });
   starting = { deviceId, promise };
   return promise;
 }
 
+/** "Retry" after a failure. */
+export function retryStart({ userId, deviceId }) {
+  starting = null;
+  return start({ userId, deviceId });
+}
+
 async function startNow({ userId, deviceId }) {
+  setStatus({ state: 'starting' });
   await stop();
-  const db = await openDb(dbName(userId, deviceId));
+  let db;
+  try {
+    db = await openDb(dbName(userId, deviceId));
+  } catch (err) {
+    failed('storage', err);
+    starting = null;
+    return;
+  }
   session = { userId, deviceId, db };
   for (const [id, rec] of await db.entries('plain')) {
     plain.set(id, rec);
@@ -57,8 +100,10 @@ async function startNow({ userId, deviceId }) {
   }
   try {
     await mls.init({ userId, deviceId, db });
+    setStatus({ state: 'ready' });
   } catch (err) {
-    console.warn('[e2ee] setup failed; messages stay unencrypted on this device for now', err);
+    failed('keys', err);
+    starting = null;
   }
   drainSoon();
 }
