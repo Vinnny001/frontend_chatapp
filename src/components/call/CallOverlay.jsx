@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Phone, PhoneOff, SwitchCamera, Video, VideoOff } from 'lucide-react';
+import { Mic, MicOff, Phone, PhoneOff, SwitchCamera, Video, VideoOff, Lock } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import { formatDuration } from '../../lib/format.js';
 import { useCall } from '../../store/call.js';
@@ -58,6 +58,11 @@ export default function CallOverlay() {
       <div className="call-info">
         {!showRemoteVideo && <Avatar name={call.peer?.name} url={call.peer?.avatarUrl} size={120} />}
         <h2>{call.peer?.name}</h2>
+        {call.verified && (
+          <span className="call-e2ee">
+            <Lock size={13} /> End-to-end encrypted
+          </span>
+        )}
         <p className={call.state === 'ringing' ? 'pulse' : ''}>{status}</p>
       </div>
 

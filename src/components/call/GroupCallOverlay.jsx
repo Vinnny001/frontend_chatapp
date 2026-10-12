@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Phone, PhoneOff, SwitchCamera, Users, Video, VideoOff } from 'lucide-react';
+import { Mic, MicOff, Phone, PhoneOff, SwitchCamera, Users, Video, VideoOff, Lock } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import { formatDuration } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
@@ -41,8 +41,9 @@ export default function GroupCallOverlay() {
 
   // People as I know them (saved name, @username or number), from the group's member list.
   const nameOf = (p) => {
-    if (p.isLocal || p.id === me?.id) return 'You';
-    return conv?.participants.find((x) => x.id === p.id)?.name || p.label || 'Someone';
+    if (p.isLocal) return 'You';
+    if (p.userId === me?.id) return 'You (other device)';
+    return conv?.participants.find((x) => x.id === p.userId)?.name || p.label || 'Someone';
   };
   const groupName = conv?.name || 'Group';
 
@@ -76,7 +77,10 @@ export default function GroupCallOverlay() {
       <header className="group-call-header">
         <Users size={18} />
         <strong>{groupName}</strong>
-        <span>{status}</span>
+        <span>
+          {active.encrypted && <Lock size={12} className="gc-lock" aria-hidden="true" />}
+          {active.encrypted && <span className="sr-only">End-to-end encrypted. </span>} {status}
+        </span>
       </header>
       <div className={`group-grid n${Math.min(participants.length, 9)}`}>
         {participants.map((p) => (

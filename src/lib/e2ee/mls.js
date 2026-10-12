@@ -409,3 +409,23 @@ export const prepare = (convId) => locked(() => ready(convId)).catch(() => null)
 
 /** A welcome arrived: join that chat's group now. */
 export const onWelcome = () => locked(() => processWelcomes());
+
+// ------------------------------------------------------------------ calls
+
+/** Signs with this device's identity key (call setup: proves the call's keys are mine). */
+export async function sign(text) {
+  return b64(await ctx.impl.signature.sign(ctx.identity.signKey, enc(text)));
+}
+
+/** Checks a signature by one of `userId`'s devices, using its pinned identity key. */
+export async function verify(text, signature, deviceId, userId) {
+  const known = await deviceKey(deviceId).catch(() => null);
+  if (!known || known.userId !== userId) return false;
+  try {
+    return await ctx.impl.signature.verify(unb64(known.key), enc(text), unb64(signature));
+  } catch {
+    return false;
+  }
+}
+
+export const deviceId = () => ctx?.deviceId || null;

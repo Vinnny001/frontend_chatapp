@@ -276,3 +276,63 @@ export const onWelcome = () => (enabled() ? mls.onWelcome().then(retryWaiting).c
 export const forgetRosters = (convId) => mls.forgetRosters(convId);
 /** Opening a chat: set up / refresh its encryption group early. */
 export const prepare = (convId) => (enabled() ? mls.prepare(convId) : Promise.resolve(null));
+
+// ------------------------------------------------------------------ calls
+
+/**
+ * One-to-one calls: the media is encrypted between the two phones by WebRTC (DTLS-SRTP), keyed
+ * by the certificates whose fingerprints are in each side's call setup. Signing those with the
+ * device's identity key means the server relaying the setup can't swap them (no man in the middle).
+ */
+const fingerprintsOf = (sdp = '') => [...sdp.matchAll(/a=fingerprint:(\S+) (\S+)/g)].map((m) => `${m[1].toLowerCase()} ${m[2].toUpperCase()}`).sort().join(',');
+const callText = (callId, sdp) => `chatapp-call:${callId}:${sdp.type}:${fingerprintsOf(sdp.sdp)}`;
+
+export async function signCallSetup(callId, sdp) {
+  if (!enabled() || !fingerprintsOf(sdp.sdp)) return null;
+  return { device: mls.deviceId(), sig: await mls.sign(callText(callId, sdp)) };
+}
+
+/** true: signed by one of the peer's devices; false: missing or wrong. */
+export async function verifyCallSetup(callId, sdp, auth, peerUserId) {
+  if (!enabled() || !auth?.device || !auth?.sig || !fingerprintsOf(sdp.sdp)) return false;
+  return mls.verify(callText(callId, sdp), auth.sig, auth.device, peerUserId);
+}
+
+/**
+ * Group calls: one random media key per call, shared with the group inside its MLS group (so
+ * neither the server nor LiveKit can read it), kept on this device for the call.
+ */
+const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+
+export async function rememberedCallKey(callId) {
+  return (await session?.db.get('kv', `callkey:${callId}`)) || null;
+}
+
+export async function shareCallKey(convId, callId, key) {
+  const out = await mls.encrypt(convId, { v: 1, callKey: key, callId });
+  if (!out) throw new Error('This chat isn’t end-to-end encrypted');
+  await session.db.put('kv', `callkey:${callId}`, key);
+  return out; // { ciphertext, epoch } for the server
+}
+
+export function newCallKey() {
+  return b64(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** Reads the call's key from the encrypted copies shared so far (null if none is readable here). */
+export async function readCallKey(convId, callId, keys) {
+  const known = await rememberedCallKey(callId);
+  if (known) return known;
+  for (const k of [...keys].reverse()) {
+    if (k.device === mls.deviceId()) continue;
+    const res = await mls.decrypt(convId, { ciphertext: k.ciphertext, epoch: k.epoch }).catch(() => null);
+    if (res?.state === 'ok' && res.payload?.callId === callId && res.payload.callKey) {
+      await session.db.put('kv', `callkey:${callId}`, res.payload.callKey);
+      return res.payload.callKey;
+    }
+  }
+  return null;
+}
+
+// Development builds only: lets the automated tests reach this module in the running app.
+if (import.meta.env.DEV) window.__e2ee = { signCallSetup, verifyCallSetup, enabled, shareContacts: (e) => publishContacts(e) };

@@ -11,7 +11,7 @@ import { setupPush } from './push.js';
 import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
 import { useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
-import { useGroupCall } from '../store/groupCall.js';
+import { onCallKeyRequest, useGroupCall } from '../store/groupCall.js';
 import { useChat } from '../store/chat.js';
 import { toast } from '../store/ui.js';
 import { loginRequests } from '../components/LoginRequestPrompt.jsx';
@@ -151,6 +151,7 @@ export function useRealtime(token) {
     socket.on('mls:welcome', () => e2ee.onWelcome().then(() => useChat.getState().refreshRevealed()));
     socket.on('mls:roster', () => e2ee.forgetRosters());
     socket.on('mls:sync', () => e2ee.pullOwnDevices());
+    socket.on('groupcall:key-request', onCallKeyRequest);
     socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed
     socket.on('login:request', loginRequests.add);
     socket.on('login:request:done', loginRequests.done);

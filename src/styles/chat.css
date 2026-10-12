@@ -1611,3 +1611,11 @@ button.file-card {
   font-style: italic;
   font-size: 14px;
 }
+
+.call-e2ee {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  opacity: 0.85;
+}

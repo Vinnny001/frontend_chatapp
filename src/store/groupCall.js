@@ -5,6 +5,8 @@ import { clearCallNotification, isNativeApp } from '../lib/native.js';
 import { useAuth } from './auth.js';
 import { useCall } from './call.js';
 import { toast } from './ui.js';
+import * as e2ee from '../lib/e2ee/index.js';
+import { useChat } from './chat.js';
 
 // Group voice/video calls (3+ people) through LiveKit: the API hands out a pass for the
 // group's call room; media goes through LiveKit's servers. One-to-one calls stay in call.js.
@@ -32,7 +34,8 @@ function snapshot() {
       /* no metadata */
     }
     return {
-      id: p.identity,
+      id: p.identity, // "userId:deviceId"
+      userId: p.identity.split(':')[0],
       label: p.name,
       avatarUrl,
       isLocal: p === room.localParticipant,
@@ -62,6 +65,47 @@ function stopRemoteAudio(track, publication) {
 
 if (import.meta.env.DEV) window.__groupRoom = () => room; // debugging in development builds only
 
+/**
+ * The media key of an end-to-end encrypted group call: the one who starts it makes one and shares
+ * it with the group (encrypted with MLS); everyone else reads it from those encrypted copies, or
+ * asks the people in the call to share it again (e.g. this device joined the group later).
+ */
+async function callKeyFor(conversationId, groupCall, started) {
+  const known = await e2ee.rememberedCallKey(groupCall.id);
+  if (known) return known;
+  if (started) {
+    const key = e2ee.newCallKey();
+    const out = await e2ee.shareCallKey(conversationId, groupCall.id, key);
+    await api(`/api/conversations/${conversationId}/group-call/key`, { method: 'POST', body: { callId: groupCall.id, ...out } });
+    return key;
+  }
+  let keys = groupCall.keys || [];
+  let asked = false;
+  for (let tries = 0; tries < 20; tries++) {
+    const key = await e2ee.readCallKey(conversationId, groupCall.id, keys);
+    if (key) return key;
+    if (!asked && tries >= 2) {
+      asked = true;
+      api(`/api/conversations/${conversationId}/group-call/key-request`, { method: 'POST', body: { callId: groupCall.id } }).catch(() => {});
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+    const fresh = (await api(`/api/conversations/${conversationId}/group-call`).catch(() => null))?.groupCall;
+    if (fresh?.id !== groupCall.id) return null;
+    keys = (fresh.keys || []).filter((k) => !keys.some((old) => old.ciphertext === k.ciphertext));
+  }
+  return null;
+}
+
+/** Someone in my encrypted call can't read its key: share it again (encrypted for the group as it is now). */
+export async function onCallKeyRequest({ conversationId, callId }) {
+  const { active } = useGroupCall.getState();
+  if (!active?.encrypted || active.callId !== callId) return;
+  const key = await e2ee.rememberedCallKey(callId);
+  if (!key) return;
+  const out = await e2ee.shareCallKey(conversationId, callId, key).catch(() => null);
+  if (out) api(`/api/conversations/${conversationId}/group-call/key`, { method: 'POST', body: { callId, ...out } }).catch(() => {});
+}
+
 export const useGroupCall = create((set, get) => ({
   // { conversationId, callId, kind, state: 'connecting' | 'connected', startedAt, muted, cameraOn, facing }
   active: null,
@@ -83,9 +127,23 @@ export const useGroupCall = create((set, get) => ({
         body: { kind },
       });
       clearCallNotification(groupCall.id);
-      const { Room, RoomEvent, VideoPresets } = await loadLiveKit();
+      const LK = await loadLiveKit();
+      const { Room, RoomEvent, VideoPresets } = LK;
+      // End-to-end encrypted group: media is encrypted with the call's key before it leaves the
+      // device, so LiveKit's server only forwards encrypted frames.
+      const secure = !!useChat.getState().conversations[conversationId]?.e2ee && e2ee.enabled();
+      let e2eeOptions;
+      if (secure) {
+        if (!LK.isE2EESupported()) throw new Error('This device can’t join end-to-end encrypted group calls');
+        const key = await callKeyFor(conversationId, groupCall, started);
+        if (!key) throw new Error('Couldn’t get this call’s encryption key. Try again in a moment.');
+        const keyProvider = new LK.ExternalE2EEKeyProvider();
+        await keyProvider.setKey(key);
+        e2eeOptions = { keyProvider, worker: new Worker(new URL('livekit-client/e2ee-worker', import.meta.url), { type: 'module' }) };
+      }
       const refresh = () => set({ participants: snapshot() });
       room = new Room({
+        ...(e2eeOptions && { e2ee: e2eeOptions }),
         adaptiveStream: true, // each tile only receives the quality it's shown at
         dynacast: true, // nobody sends video nobody is watching
         // Group video at 640×360, like other messengers: light on data, battery and weak networks.
@@ -115,6 +173,7 @@ export const useGroupCall = create((set, get) => ({
         .on(RoomEvent.Disconnected, () => get().cleanup());
       // (Development only: window.__lkRelay forces LiveKit's relay, for testing restrictive networks.)
       const rtcConfig = import.meta.env.DEV && window.__lkRelay ? { iceTransportPolicy: 'relay' } : undefined;
+      if (e2eeOptions) await room.setE2EEEnabled(true);
       await room.connect(url, token, rtcConfig ? { rtcConfig } : undefined);
       await room.startAudio().catch(() => {});
       await room.localParticipant.setMicrophoneEnabled(true);
@@ -128,6 +187,7 @@ export const useGroupCall = create((set, get) => ({
           state: 'connected',
           startedAt: Date.parse(groupCall.startedAt),
           cameraOn: video,
+          encrypted: !!e2eeOptions,
         },
       }));
       refresh();

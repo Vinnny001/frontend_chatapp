@@ -6,6 +6,8 @@ import { playEndTone, startRingback, startRingtone, stopRingback, stopRingtone }
 import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/native.js';
 import { displayName } from './people.js';
 import { toast } from './ui.js';
+import * as e2ee from '../lib/e2ee/index.js';
+import { useChat } from './chat.js';
 
 // One active 1:1 call at a time. Media is peer-to-peer (WebRTC); the realtime service only
 // relays signaling messages.
@@ -29,6 +31,27 @@ async function getMedia(kind, facingMode = 'user') {
 function signal(data) {
   const { call } = useCall.getState();
   if (call) emitAck('call:signal', { callId: call.id, data }).catch(() => {});
+}
+
+/** Sends my call setup, signed with this device's key (so the server can't swap its encryption keys). */
+async function sendSetup(sdp) {
+  const { call } = useCall.getState();
+  const auth = call ? await e2ee.signCallSetup(call.id, sdp).catch(() => null) : null;
+  signal({ sdp, ...(auth && { auth }) });
+}
+
+/**
+ * Checks the other side's call setup came from one of their devices. In an end-to-end
+ * encrypted chat an unverifiable call is ended (someone may be in the middle).
+ */
+async function setupTrusted(call, data) {
+  const ok = await e2ee.verifyCallSetup(call.id, data.sdp, data.auth, call.peer.id).catch(() => false);
+  if (ok) {
+    useCall.getState().patch({ verified: true });
+    return true;
+  }
+  const encryptedChat = !!useChat.getState().conversations[call.conversationId]?.e2ee;
+  return !(encryptedChat && e2ee.enabled());
 }
 
 function createPeer(localStream) {
@@ -242,7 +265,7 @@ export const useCall = create((set, get) => ({
     createPeer(call.localStream);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    signal({ sdp: pc.localDescription.toJSON() });
+    await sendSetup(pc.localDescription.toJSON());
   },
 
   onRejected({ callId, reason }) {
@@ -270,11 +293,15 @@ export const useCall = create((set, get) => ({
     if (get().call?.id !== callId || !pc) return;
     try {
       if (data.sdp) {
+        if (!(await setupTrusted(get().call, data))) {
+          get().hangup('Couldn’t verify this call');
+          return;
+        }
         await pc.setRemoteDescription(data.sdp);
         if (data.sdp.type === 'offer') {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          signal({ sdp: pc.localDescription.toJSON() });
+          await sendSetup(pc.localDescription.toJSON());
         }
         await flushCandidates();
       } else if (data.candidate) {
