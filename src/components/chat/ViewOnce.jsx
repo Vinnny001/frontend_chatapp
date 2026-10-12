@@ -45,7 +45,10 @@ export function ViewOnceBody({ msg, conv, me }) {
 /** Full screen, straight from the server (never saved on the phone); gone once closed. */
 export function ViewOnceViewer() {
   const item = useUI((s) => s.viewOnce);
-  const close = () => useUI.getState().setViewOnce(null);
+  const close = () => {
+    if (item?.url?.startsWith('blob:')) URL.revokeObjectURL(item.url); // the decrypted copy is gone
+    useUI.getState().setViewOnce(null);
+  };
   useEffect(() => {
     if (!item) return undefined;
     const onKey = (e) => e.key === 'Escape' && close();

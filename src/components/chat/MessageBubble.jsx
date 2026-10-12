@@ -43,7 +43,7 @@ import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { inviteCodeOf } from '../../lib/invites.js';
-import { plainText } from '../../lib/e2ee/index.js';
+import { contentOf } from '../../lib/e2ee/index.js';
 import { PollBody } from './Poll.jsx';
 import { ViewOnceBody } from './ViewOnce.jsx';
 import { useCall } from '../../store/call.js';
@@ -106,11 +106,16 @@ function Linked({ text }) {
   });
 }
 
-function ReplyQuote({ reply, conv, me, onClick }) {
+function ReplyQuote({ reply: quoted, conv, me, onClick }) {
+  // An encrypted original: what it said is only known on this device.
+  const inner = quoted.e2ee && contentOf(quoted.id);
+  const reply = inner
+    ? { ...quoted, type: inner.type, text: inner.text || '', mediaName: inner.media?.name, mediaUrl: inner.type === 'image' && !inner.viewOnce ? inner.media?.url : undefined }
+    : quoted;
   const author = reply.sender === me ? 'You' : conv.participants.find((p) => p.id === reply.sender)?.name || 'Someone';
   const label = reply.deletedForEveryone
     ? 'This message was deleted'
-    : plainMentions(reply.text || (reply.e2ee ? plainText(reply.id) || '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
+    : plainMentions(reply.text || (reply.e2ee && !inner ? '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
   return (
     <button className="reply-quote" onClick={onClick}>
       <span className="reply-body">

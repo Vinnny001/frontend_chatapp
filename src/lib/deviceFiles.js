@@ -47,7 +47,8 @@ export async function openDocument(media) {
     : await ensureMedia(media.url);
   if (!nativeFilesSupported()) {
     // Web: open the saved copy (or the network file) in a new tab / download it.
-    const href = blob ? URL.createObjectURL(blob) : navigator.onLine !== false ? mediaUrl(media.url) : null;
+    // (An encrypted file is only ever opened decrypted, never from its raw address.)
+    const href = blob ? URL.createObjectURL(blob) : navigator.onLine !== false && !media.key ? mediaUrl(media.url) : null;
     if (!href) throw new Error('This document hasn’t been downloaded yet. Connect to the internet to open it.');
     const a = Object.assign(document.createElement('a'), { href, download: media.name || 'document', target: '_blank', rel: 'noopener' });
     a.click();

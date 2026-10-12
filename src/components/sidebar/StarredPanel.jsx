@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
 import SidePanel from './SidePanel.jsx';
 import { api } from '../../lib/api.js';
+import * as e2ee from '../../lib/e2ee/index.js';
 import { formatListTime } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { conversationTitle, previewText, useChat } from '../../store/chat.js';
@@ -15,7 +16,7 @@ export default function StarredPanel() {
 
   useEffect(() => {
     api('/api/messages/starred')
-      .then((d) => setMessages(d.messages))
+      .then((d) => setMessages(d.messages.map(e2ee.reveal))) // encrypted ones: this device's copy
       .catch((e) => {
         toast(e.message, 'error');
         setMessages([]);

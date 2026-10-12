@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pin } from 'lucide-react';
-import { useChat } from '../../store/chat.js';
-import { plainText } from '../../lib/e2ee/index.js';
+import { previewText, useChat } from '../../store/chat.js';
+import { contentOf } from '../../lib/e2ee/index.js';
 
 /** Pinned messages under the chat header: tap to jump there; with several, each tap moves to the next. */
 export default function PinnedBar({ conv, me }) {
@@ -32,7 +32,7 @@ export default function PinnedBar({ conv, me }) {
       <span className="pinned-body">
         <strong>{pins.length > 1 ? `Pinned message ${i + 1} of ${pins.length}` : 'Pinned message'}</strong>
         <span>
-          {who}: {(pin.preview === '🔒 Message' && plainText(pin.messageId)) || pin.preview || 'Message'}
+          {who}: {(pin.preview === '🔒 Message' && contentOf(pin.messageId) && previewText({ ...contentOf(pin.messageId), conversationId: conv.id })) || pin.preview || 'Message'}
         </span>
       </span>
     </button>

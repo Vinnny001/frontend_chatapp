@@ -19,6 +19,8 @@ import { storage } from '../lib/storage.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { plainMentions } from '../lib/mentions.js';
 import * as e2ee from '../lib/e2ee/index.js';
+import { encryptFile, registerMediaKey, decryptToBlob } from '../lib/e2ee/files.js';
+import { mediaUrl } from '../lib/config.js';
 import { clearChatNotifications, setNativeNames, takeReceivedMessages } from '../lib/native.js';
 import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
@@ -158,6 +160,27 @@ export function messageStatus(msg, conv, me) {
   return 'sent';
 }
 
+/**
+ * The end-to-end encrypted content of a message about to be sent: its kind, text or caption,
+ * attachment (with the file's key), poll, view-once and forwarded flags. View-once keeps its
+ * file address out of here: the server hands it out once.
+ */
+function contentForEncryption(m) {
+  const media = m.remoteMedia || m.media;
+  const keep = media && {
+    ...(!m.viewOnce && { url: media.url }),
+    ...Object.fromEntries(['key', 'iv', 'name', 'size', 'mime', 'duration', 'width', 'height'].filter((k) => media[k] != null).map((k) => [k, media[k]])),
+  };
+  return {
+    type: m.type,
+    text: m.text || '',
+    ...(keep && { media: keep }),
+    ...(m.poll && { poll: { question: m.poll.question, options: m.poll.options.map((o) => o.text), multiple: !!m.poll.multiple } }),
+    ...(m.viewOnce && { viewOnce: true }),
+    ...(m.forwarded && { forwarded: true }),
+  };
+}
+
 export const useChat = create((set, get) => {
   const patchConversation = (id, patch) =>
     set((s) => {
@@ -180,6 +203,23 @@ export const useChat = create((set, get) => {
     patchThread(convId, (t) => ({
       items: t.items.map((m) => (keyOf(m) === key || m.id === key ? { ...m, ...patch } : m)),
     }));
+
+  /** Encrypts a pending message once (kept on it, so a retry sends the same ciphertext). */
+  const encryptOut = async (m, { offline = false } = {}) => {
+    const payload = contentForEncryption(m);
+    const out = await e2ee.encryptMessage(m.conversationId, payload, { offline });
+    if (!out) return null;
+    const media = m.remoteMedia || m.media;
+    const e2eeOut = {
+      ...out,
+      payload,
+      ...(m.viewOnce && media?.url && { viewOnceUrl: media.url }),
+      ...(m.poll && { pollMeta: { count: m.poll.options.length, multiple: !!m.poll.multiple } }),
+    };
+    e2ee.rememberSent(`c:${m.clientId}`, payload, out.ciphertext, { conv: m.conversationId, sender: meId(), at: m.createdAt });
+    patchItem(m.conversationId, m.clientId, { e2eeOut });
+    return e2eeOut;
+  };
 
   const isViewing = (convId) =>
     get().activeId === convId && document.visibilityState === 'visible' && get().threads[convId]?.loaded;
@@ -588,17 +628,18 @@ export const useChat = create((set, get) => {
       // Always work from the latest copy: a retry may pass a stale snapshot.
       const current = () => get().threads[convId]?.items.find((m) => m.clientId === msg.clientId) || msg;
       patchItem(convId, msg.clientId, { status: 'pending' });
+      const encryptedChat = () => !!get().conversations[convId]?.e2ee;
 
       // Offline: keep it queued (clock icon). It is sent on reconnect, or on Android by the
       // background worker as soon as the network returns, even if the app is closed.
       if (!isOnline()) {
-        // Encrypted chats: encrypt it now with the keys this device has, so the background
-        // sender never sends plain text.
-        if (current().type === 'text' && get().conversations[convId]?.e2ee && !current().e2eeOut) {
-          const out = await e2ee.encryptText(convId, current().text, { offline: true }).catch(() => null);
+        if (encryptedChat() && !current().e2eeOut) {
+          // The background sender never sends plain content into an encrypted chat: text is
+          // encrypted now with this device's keys; attachments wait for the app (the file
+          // has to be encrypted before it's uploaded).
+          if (current().needsUpload) return;
+          const out = await encryptOut(current(), { offline: true }).catch(() => null);
           if (!out) return; // can't encrypt offline: it goes when the app is back online
-          e2ee.rememberSent(`c:${msg.clientId}`, current().text, out.ciphertext);
-          patchItem(convId, msg.clientId, { e2eeOut: out });
         }
         queueInBackground(current(), authToken(), fileFor(msg.clientId));
         return;
@@ -606,37 +647,44 @@ export const useChat = create((set, get) => {
 
       inFlight.add(msg.clientId);
       try {
-        // End-to-end encryption: text is encrypted once for every device in the chat. A retry
-        // sends the same ciphertext again (the server keeps one copy per clientId).
-        if (current().type === 'text' && !current().e2eeOut && e2ee.enabled()) {
-          const out = await e2ee.encryptText(convId, current().text);
-          if (out) {
-            e2ee.rememberSent(`c:${msg.clientId}`, current().text, out.ciphertext);
-            patchItem(convId, msg.clientId, { e2eeOut: out });
-          }
-        }
+        // End-to-end encryption: decided before anything leaves the device (the file is
+        // encrypted before it's uploaded). A retry reuses the same ciphertext.
+        const encrypt = !current().e2eeOut && e2ee.enabled() && (encryptedChat() || (await e2ee.willEncrypt(convId)));
         if (current().needsUpload) {
           // In memory normally; after an app restart it comes back from on-device storage.
           const file = pendingFiles.get(msg.clientId) || (await getStoredMedia(pendingKey(msg.clientId)));
           if (!file) throw new Error('File is no longer available');
-          const uploaded = await uploadFile(file, {
-            name: msg.media?.name,
+          let body = file;
+          let fileKey = null;
+          if (encrypt) {
+            const sealed = await encryptFile(file);
+            body = sealed.blob;
+            fileKey = { key: sealed.key, iv: sealed.iv, name: msg.media?.name || file.name, size: file.size, mime: file.type || msg.media?.mime };
+          }
+          const uploaded = await uploadFile(body, {
+            // No extension: the bytes are opaque (and Cloudinary refuses .bin).
+            name: fileKey ? 'encrypted' : msg.media?.name,
             onProgress: (progress) => patchItem(convId, msg.clientId, { progress }),
           });
+          const remoteMedia = { ...uploaded, duration: msg.media?.duration, ...fileKey };
           // Keep our own copy under the real URL so it never needs downloading again
           // (not view-once media: it isn't kept on the phone).
-          if (!msg.viewOnce) await rememberMedia(uploaded.url, file);
+          if (!msg.viewOnce) {
+            await rememberMedia(uploaded.url, file);
+            registerMediaKey(remoteMedia);
+          }
           pendingFiles.delete(msg.clientId);
           deleteStoredMedia(pendingKey(msg.clientId));
-          patchItem(convId, msg.clientId, {
-            needsUpload: false,
-            remoteMedia: { ...uploaded, duration: msg.media?.duration },
-          });
+          patchItem(convId, msg.clientId, { needsUpload: false, remoteMedia });
+        }
+        if (encrypt) {
+          const out = await encryptOut(current());
+          if (!out && encryptedChat()) throw new Error('Couldn’t encrypt this message. Try again.');
         }
 
         const sent = current();
         const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(sent) }, 20000);
-        if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.text, sent.e2eeOut.ciphertext);
+        if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.e2eeOut.payload, sent.e2eeOut.ciphertext, { conv: convId, sender: meId(), at: message.createdAt });
         cancelBackground(msg.clientId);
         saveMessages([e2ee.reveal(message)]);
         addItems(convId, [message]);
@@ -650,7 +698,7 @@ export const useChat = create((set, get) => {
         if (isNetworkError(e)) {
           // Connection dropped mid-send: stay queued and try again automatically.
           patchItem(convId, msg.clientId, { status: 'pending' });
-          queueInBackground(current(), authToken(), fileFor(msg.clientId));
+          if (!(encryptedChat() && current().needsUpload)) queueInBackground(current(), authToken(), fileFor(msg.clientId));
         } else {
           patchItem(convId, msg.clientId, { status: 'failed', error: e.message });
           toast(e.message, 'error');
@@ -702,12 +750,11 @@ export const useChat = create((set, get) => {
         for (const m of t.items) {
           if (!m.pending || m.status !== 'pending') continue;
           let item = m;
-          if (m.type === 'text' && !m.e2eeOut && get().conversations[m.conversationId]?.e2ee) {
-            const out = await e2ee.encryptText(m.conversationId, m.text, { offline: true }).catch(() => null);
+          if (!m.e2eeOut && get().conversations[m.conversationId]?.e2ee) {
+            if (m.needsUpload) continue; // the file must be encrypted first: sent by the app
+            const out = await encryptOut(m, { offline: true }).catch(() => null);
             if (!out) continue; // sent by the app when it's open again
-            e2ee.rememberSent(`c:${m.clientId}`, m.text, out.ciphertext);
             item = { ...m, e2eeOut: out };
-            patchItem(m.conversationId, m.clientId, { e2eeOut: out });
           }
           queueInBackground(item, authToken(), fileFor(m.clientId));
         }
@@ -728,9 +775,12 @@ export const useChat = create((set, get) => {
     /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
     onRevealed(m) {
       if (!m?.conversationId) return;
-      patchItem(m.conversationId, m.id, { text: m.text, e2eeState: m.e2eeState });
-      patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, text: m.text, e2eeState: m.e2eeState } } : {}));
-      if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, text: m.text });
+      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, e2eeState: m.e2eeState };
+      patchItem(m.conversationId, m.id, shown);
+      patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, ...shown } } : {}));
+      if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, ...shown });
+      // Attachments of decrypted messages follow the auto-download rules like any other.
+      if (m.e2eeState === 'ok' && m.media?.url && !m.viewOnce) keepOffline([m]);
     },
 
     async editMessage(msg, text) {
@@ -738,9 +788,10 @@ export const useChat = create((set, get) => {
       try {
         if (msg.e2ee) {
           // An encrypted message is edited with a new ciphertext.
-          const out = await e2ee.encryptText(msg.conversationId, text);
+          const payload = { ...contentForEncryption(msg), text };
+          const out = await e2ee.encryptMessage(msg.conversationId, payload);
           if (!out) throw new Error('Couldn’t encrypt the edit');
-          e2ee.rememberSent(msg.id, text, out.ciphertext);
+          e2ee.rememberSent(msg.id, payload, out.ciphertext, { conv: msg.conversationId, sender: meId(), at: msg.createdAt });
           await emitAck('message:edit', { messageId: msg.id, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch } });
           patchItem(msg.conversationId, msg.id, { e2ee: { ...msg.e2ee, ciphertext: out.ciphertext, epoch: out.epoch } });
           return;
@@ -796,6 +847,17 @@ export const useChat = create((set, get) => {
       try {
         const { url, type } = await api(`/api/messages/${msg.id}/open`, { method: 'POST' });
         patchItem(msg.conversationId, msg.id, { openedBy: [...new Set([...(msg.openedBy || []), meId()])] });
+        if (msg.e2ee) {
+          // Encrypted: download, decrypt in memory, show, then forget the file's key.
+          if (!msg.media?.key) throw new Error('This photo can no longer be opened');
+          const res = await fetch(mediaUrl(url));
+          if (!res.ok) throw new Error('Couldn’t download it. Try again.');
+          const blob = await decryptToBlob(await res.arrayBuffer(), msg.media);
+          e2ee.forgetViewOnceKey(msg.id);
+          patchItem(msg.conversationId, msg.id, { media: { ...msg.media, key: null, iv: null } });
+          useUI.getState().setViewOnce({ url: URL.createObjectURL(blob), type: msg.type });
+          return;
+        }
         useUI.getState().setViewOnce({ url, type });
       } catch (e) {
         if (e.status === 410) patchItem(msg.conversationId, msg.id, { openedBy: [...new Set([...(msg.openedBy || []), meId()])] });
@@ -814,7 +876,8 @@ export const useChat = create((set, get) => {
       voteSeq.set(msg.id, seq);
       try {
         const { poll } = await api(`/api/messages/${msg.id}/vote`, { method: 'POST', body: { options } });
-        if (voteSeq.get(msg.id) === seq) patchItem(msg.conversationId, msg.id, { poll });
+        // (Encrypted polls: the server only knows option numbers, so keep our question/options.)
+        if (voteSeq.get(msg.id) === seq) patchItem(msg.conversationId, msg.id, { poll: { ...before, votes: poll.votes } });
       } catch (e) {
         if (voteSeq.get(msg.id) === seq) patchItem(msg.conversationId, msg.id, { poll: before });
         toast(e.message, 'error');
@@ -845,6 +908,11 @@ export const useChat = create((set, get) => {
 
     forward(msg, convIds) {
       for (const convId of convIds) {
+        // An encrypted attachment only opens with its key: it can only go to encrypted chats.
+        if (msg.media?.key && !get().conversations[convId]?.e2ee) {
+          toast('This can only be forwarded to end-to-end encrypted chats', 'error');
+          continue;
+        }
         get().sendMessage(convId, {
           type: msg.type,
           text: msg.text,
@@ -977,6 +1045,7 @@ export const useChat = create((set, get) => {
     onMessageUpdated(patch) {
       const { id, conversationId, lastReaction, ...rest } = patch;
       const before = get().threads[conversationId]?.items.find((m) => m.id === id);
+      if (rest.poll && before?.poll) rest.poll = { ...before.poll, votes: rest.poll.votes }; // new votes only
       if (rest.e2ee) {
         // An encrypted edit: decrypt the new version (the old text shows meanwhile).
         const shown = e2ee.reveal({ ...(before || {}), id, conversationId, createdAt: before?.createdAt || new Date().toISOString(), ...rest });

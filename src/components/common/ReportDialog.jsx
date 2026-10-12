@@ -13,6 +13,18 @@ const REASONS = [
   ['other', 'Something else'],
 ];
 
+/**
+ * Their last encrypted messages as this device decrypted them: the server can't read them, so
+ * the report carries what you saw (as on WhatsApp).
+ */
+function evidenceFor(conversationId, userId) {
+  const items = useChat.getState().threads[conversationId]?.items || [];
+  return items
+    .filter((m) => m.sender === userId && m.e2ee && m.e2eeState === 'ok' && !m.deletedForEveryone)
+    .slice(-5)
+    .map((m) => ({ id: m.id, type: m.type, text: (m.text || m.media?.name || '').slice(0, 2000) }));
+}
+
 /** Report someone; their last 5 messages in this chat go with the report (as on WhatsApp). */
 export default function ReportDialog({ user, name, conversationId, onClose }) {
   const [reason, setReason] = useState('spam');
@@ -25,7 +37,7 @@ export default function ReportDialog({ user, name, conversationId, onClose }) {
     try {
       await api(`/api/users/${user.id}/report`, {
         method: 'POST',
-        body: { reason, details: details.trim() || undefined, conversationId, block },
+        body: { reason, details: details.trim() || undefined, conversationId, block, evidence: evidenceFor(conversationId, user.id) },
       });
       if (block) await useChat.getState().loadConversations().catch(() => {});
       toast(block ? `${name} was reported and blocked` : `${name} was reported`);

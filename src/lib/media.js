@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { mediaUrl } from './config.js';
 import { getStoredMedia, putStoredMedia } from './localdb.js';
+import { decryptToBlob, mediaKeyFor } from './e2ee/files.js';
 
 // Photos, videos, voice notes, files and avatars are downloaded once and kept on the device
 // (see localdb.js), so they can be viewed later without a connection.
@@ -23,7 +24,9 @@ export async function ensureMedia(url) {
     try {
       const res = await fetch(mediaUrl(url), { mode: 'cors' });
       if (!res.ok) return null;
-      const blob = await res.blob();
+      // End-to-end encrypted attachment: decrypt it here (the stored copy is the decrypted one).
+      const key = mediaKeyFor(url);
+      const blob = key ? await decryptToBlob(await res.arrayBuffer(), key) : await res.blob();
       await putStoredMedia(url, blob);
       return blob;
     } catch {
@@ -103,6 +106,14 @@ export function useMediaSrc(url, { auto = true } = {}) {
         setState({ src: null, missing: true, needsDownload: false });
       } else if (!auto) {
         setState({ src: null, missing: false, needsDownload: true });
+      } else if (mediaKeyFor(url)) {
+        // Encrypted: it has to be downloaded and decrypted before it can be shown.
+        setState({ src: null, missing: false, needsDownload: false });
+        ensureMedia(url).then((b) => {
+          if (cancelled || !b) return;
+          objectUrl = URL.createObjectURL(b);
+          setState({ src: objectUrl, missing: false, needsDownload: false });
+        });
       } else {
         setState({ src: mediaUrl(url), missing: false, needsDownload: false });
         ensureMedia(url); // keep a copy for offline use

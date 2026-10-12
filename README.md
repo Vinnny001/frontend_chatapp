@@ -58,13 +58,16 @@ For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overvie
 
 ## End-to-end encryption
 
-Text messages (with replies, @mentions and edits) are end-to-end encrypted with **MLS** (RFC 9420, the `ts-mls` library, cipher suite P-256 / AES-128-GCM / SHA-256, which every Android WebView supports):
+Messages are end-to-end encrypted with **MLS** (RFC 9420, the `ts-mls` library, cipher suite P-256 / AES-128-GCM / SHA-256, which every Android WebView supports):
 - Every signed-in device is a member of each of its chats' encryption groups. A message is encrypted **once** for the whole group however many devices there are (the key changes that add or remove devices grow with the logarithm of the group size).
 - Keys move forward with every message and are deleted after use, so a stolen key can't read earlier messages. Each device refreshes its own keys at least daily, and signed-out devices and people who leave are removed before the next message is sent, so a stolen key stops working for later ones.
 - Each device keeps its keys and the messages it decrypted in IndexedDB (`src/lib/e2ee`); they're deleted when you sign out on that device. A message can be decrypted only once, so the device's own copy is what you see from then on.
 - A chat switches to encryption by itself once everyone in it has an up-to-date app, and stays encrypted. Older messages stay readable (not encrypted). A newly linked device can't read messages from before it was linked yet (history transfer comes next).
 - Notifications for encrypted messages say "🔒 New message". In encrypted chats, the notification's Reply opens the chat (only the app can encrypt).
-- Not yet encrypted: photos, files, voice notes, polls, reactions and calls (next phases).
+- What's encrypted: text, captions, photos, videos, voice notes and files (each file is encrypted on the sender's device with its own AES-256-GCM key before upload; the key travels in the encrypted message), polls (question and options), view-once (the server hands out the encrypted file once; the viewer's device then deletes the key), forwarded flags, and what kind of message it is (the server sees every encrypted message as "text").
+- Search, the Media/Links/Docs browser, reply quotes, pins and starred messages show encrypted messages from what this device decrypted. Reports include the reported person's last messages as your device decrypted them (marked as such for the admin).
+- What the server still sees: who sends to whom and when, file sizes, whom a message @mentions (for the notification), which message a reply quotes, reactions (emoji), and poll votes as option numbers (not what the options say). Calls aren't covered yet (next phase).
+- Encrypted attachments can only be forwarded to encrypted chats; in an encrypted chat they're sent by the app itself (not the background sender, which can't encrypt files).
 
 ## Linked devices and sign-in approval
 

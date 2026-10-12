@@ -259,7 +259,8 @@ function Reports({ onCount }) {
               <span className="admin-muted">Their last messages in that chat:</span>
               {r.messages.map((m, i) => (
                 <div key={i} className="admin-evidence-msg">
-                  {m.text || (m.mediaUrl ? `[${m.type}]` : '')}
+                  {m.text || (m.mediaUrl || m.fromReporter ? `[${m.type}]` : m.type === 'encrypted' ? '[encrypted message]' : '')}
+                  {m.fromReporter && <span className="admin-badge">decrypted by the reporter’s app</span>}
                   <span className="admin-muted"> · {formatListTime(m.at)}</span>
                 </div>
               ))}

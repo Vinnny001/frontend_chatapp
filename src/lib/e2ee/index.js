@@ -1,17 +1,21 @@
 // What the rest of the app uses for end-to-end encryption.
 //
-// Encrypted messages arrive from the server with an empty text and an `e2ee` ciphertext.
-// `reveal(message)` fills in the text from this device's saved copy, or queues the message
+// An encrypted message reaches the server as an opaque "text" message with an `e2ee`
+// ciphertext; everything it contains travels inside: its kind, text or caption, the attachment
+// (address and the file's own key), poll question and options, view-once and forwarded flags.
+// `reveal(message)` fills all of that in from this device's saved copy, or queues the message
 // for decryption (oldest first) and marks it `e2eeState: 'pending'`; listeners hear when it's
-// done. Messages this device sent are saved in plain form when they're sent (a sender can't
-// decrypt its own message).
+// done. A message can be decrypted only once, so the result is kept (in IndexedDB), and what
+// this device sends is kept when it's sent (a sender can't decrypt its own message).
 
 import * as mls from './mls.js';
 import { dbName, deleteDb, openDb } from './db.js';
+import { forgetMediaKeys, registerMediaKey } from './files.js';
 import { MENTION_TOKEN } from '../mentions.js';
 
 let session = null; // { userId, deviceId, db }
-const plain = new Map(); // message id (or "c:"+clientId) -> { text, fp, state }
+// message id (or "c:"+clientId) -> { p: payload, fp, state, conv, sender, at }
+const plain = new Map();
 const queue = new Map();
 const waiting = new Map(); // id -> [resolve] (revealNow)
 const lastTry = new Map(); // id -> time of the last attempt that may succeed later
@@ -23,6 +27,7 @@ const TRANSIENT = new Set(['waiting', 'retry']); // may work later: never saved
 
 /** A short fingerprint of a ciphertext: an edit brings a new ciphertext (and a new decryption). */
 const fpOf = (ciphertext) => ciphertext.slice(-32);
+const payloadOf = (rec) => rec?.p || (rec?.text != null ? { type: 'text', text: rec.text } : null);
 
 let starting = null; // { deviceId, promise }: one start per device, however often it's asked
 
@@ -38,7 +43,11 @@ async function startNow({ userId, deviceId }) {
   await stop();
   const db = await openDb(dbName(userId, deviceId));
   session = { userId, deviceId, db };
-  for (const [id, rec] of await db.entries('plain')) plain.set(id, rec);
+  for (const [id, rec] of await db.entries('plain')) {
+    plain.set(id, rec);
+    const p = payloadOf(rec);
+    if (p?.media && !p.viewOnce) registerMediaKey(p.media);
+  }
   try {
     await mls.init({ userId, deviceId, db });
   } catch (err) {
@@ -56,6 +65,7 @@ export async function stop({ wipe = false } = {}) {
   plain.clear();
   queue.clear();
   lastTry.clear();
+  forgetMediaKeys();
   if (s) {
     s.db.close();
     if (wipe) await deleteDb(dbName(s.userId, s.deviceId));
@@ -71,24 +81,45 @@ export function onRevealed(fn) {
 
 function remember(id, rec) {
   plain.set(id, rec);
+  const p = payloadOf(rec);
+  if (p?.media && !p.viewOnce) registerMediaKey(p.media);
   if (!TRANSIENT.has(rec.state)) session?.db.put('plain', id, rec).catch(() => {});
 }
 
-/** The plain text I know for a message id ('' if none). */
-export const plainText = (id) => plain.get(id)?.text || '';
+/** What an encrypted message contained, applied to the server's copy. */
+function apply(m, p) {
+  // View-once keeps its file address on the server (handed out once); the rest is in here.
+  const media = p.media ? { ...p.media, url: p.media.url || m.media?.url } : null;
+  return {
+    ...m,
+    type: p.type || 'text',
+    text: p.text || '',
+    media,
+    ...(p.poll && {
+      poll: {
+        question: p.poll.question,
+        options: p.poll.options.map((text, i) => ({ id: String(i), text })),
+        multiple: !!p.poll.multiple,
+        votes: m.poll?.votes || [], // votes are counted by the server (by option number)
+      },
+    }),
+    viewOnce: !!(m.viewOnce || p.viewOnce),
+    forwarded: !!(m.forwarded || p.forwarded),
+    e2eeState: 'ok',
+  };
+}
 
-/** Fills in an encrypted message's text (or queues it for decryption). */
+/** Fills in an encrypted message (or queues it for decryption). */
 export function reveal(m) {
   if (!m?.e2ee?.ciphertext || m.deletedForEveryone) return m;
   const fp = fpOf(m.e2ee.ciphertext);
   const rec = (m.id && plain.get(m.id)) || (m.clientId && plain.get(`c:${m.clientId}`));
-  if (rec?.fp === fp && rec.state === 'ok') {
-    return m.text === rec.text && m.e2eeState === 'ok' ? m : { ...m, text: rec.text, e2eeState: 'ok' };
-  }
+  if (rec?.fp === fp && rec.state === 'ok') return apply(m, payloadOf(rec));
   if (rec?.fp === fp && !TRANSIENT.has(rec.state)) return { ...m, text: '', e2eeState: rec.state };
   enqueue(m);
-  // An edit being decrypted keeps showing the previous text meanwhile.
-  return { ...m, text: rec?.state === 'ok' ? rec.text : '', e2eeState: rec?.state === 'ok' ? 'ok' : rec?.state || 'pending' };
+  // An edit being decrypted keeps showing the previous version meanwhile.
+  if (rec?.state === 'ok') return apply(m, payloadOf(rec));
+  return { ...m, text: '', e2eeState: rec?.state || 'pending' };
 }
 
 /** Like reveal, but waits (a few seconds at most) for the decryption: new messages, notifications. */
@@ -128,11 +159,12 @@ async function drain() {
         if (m.e2ee.device === session.deviceId) res = { state: 'own' }; // sent from here, but the saved copy is gone
         else if (!mls.active()) res = { state: 'waiting' };
         else res = await mls.decrypt(m.conversationId, m.e2ee).catch((e) => ({ state: e?.status === 0 ? 'retry' : 'failed', error: e?.message }));
-        const rec = res.state === 'ok' ? { text: String(res.payload?.text ?? ''), fp, state: 'ok' } : { text: '', fp, state: res.state };
+        const where = { conv: m.conversationId, sender: m.sender, at: m.createdAt };
+        const rec = res.state === 'ok' ? { p: res.payload || {}, fp, state: 'ok', ...where } : { fp, state: res.state, ...where };
         if (TRANSIENT.has(rec.state)) lastTry.set(m.id, Date.now());
         else lastTry.delete(m.id);
         if (rec.state !== 'ok' && plain.get(m.id)?.state === 'ok') {
-          // A newer version (edit) couldn't be read: keep showing the text we have.
+          // A newer version (edit) couldn't be read: keep showing what we have.
           if (!TRANSIENT.has(rec.state)) plain.set(m.id, { ...plain.get(m.id), fp });
         } else remember(m.id, rec);
         const shown = reveal(m);
@@ -151,16 +183,57 @@ export function retryWaiting() {
   lastTry.clear();
 }
 
-/** Encrypts a text message for a chat. Null: this chat isn't encrypted (send it as before). */
-export async function encryptText(convId, text, { offline = false } = {}) {
+/** Mentioned user ids (the server needs them for the notification). */
+const mentionsIn = (text = '') => [...new Set([...text.matchAll(MENTION_TOKEN)].map((x) => x[2]))];
+
+/**
+ * Encrypts a message for a chat: payload { type, text, media, poll, viewOnce, forwarded }.
+ * Null: this chat isn't encrypted (send it as before).
+ */
+export async function encryptMessage(convId, payload, { offline = false } = {}) {
   if (!enabled()) return null;
-  const out = await mls.encrypt(convId, { v: 1, text }, { offline });
-  return out && { ...out, mentions: [...new Set([...text.matchAll(MENTION_TOKEN)].map((x) => x[2]))] };
+  const out = await mls.encrypt(convId, { v: 1, ...payload }, { offline });
+  return out && { ...out, mentions: mentionsIn(payload.text) };
+}
+
+/** Is (or becomes) this chat encrypted? Sets up its group if needed. */
+export async function willEncrypt(convId) {
+  if (!enabled()) return false;
+  return !!(await mls.prepare(convId));
 }
 
 /** Saves what I sent (by clientId now, by message id once the server confirms it). */
-export function rememberSent(key, text, ciphertext) {
-  remember(key, { text, fp: fpOf(ciphertext), state: 'ok' });
+export function rememberSent(key, payload, ciphertext, where = {}) {
+  remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where });
+}
+
+/** What a message contained (for reply quotes and pins), or null. */
+export function contentOf(id) {
+  const rec = plain.get(id);
+  return rec?.state === 'ok' ? payloadOf(rec) : null;
+}
+
+/** Text (or caption) of a message, '' if unknown. */
+export const plainText = (id) => contentOf(id)?.text || '';
+
+/** View once: the file's key is thrown away once it has been viewed. */
+export function forgetViewOnceKey(id) {
+  const rec = plain.get(id);
+  const p = payloadOf(rec);
+  if (!p?.media) return;
+  remember(id, { ...rec, p: { ...p, media: { ...p.media, key: null, iv: null } } });
+}
+
+/** Encrypted messages this device has read, newest first: { id, conversationId, sender, createdAt, ...content }. */
+export function localMessages({ conversationId } = {}) {
+  const out = [];
+  for (const [id, rec] of plain) {
+    if (id.startsWith('c:') || rec.state !== 'ok' || !rec.conv) continue;
+    if (conversationId && rec.conv !== conversationId) continue;
+    const p = payloadOf(rec);
+    out.push({ ...p, id, conversationId: rec.conv, sender: rec.sender, createdAt: rec.at, e2ee: true });
+  }
+  return out.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 export const onWelcome = () => (enabled() ? mls.onWelcome().then(retryWaiting).catch(() => {}) : Promise.resolve());

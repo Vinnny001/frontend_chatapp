@@ -11,6 +11,7 @@ import InviteLinkDialog from './InviteLinkDialog.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
+import * as e2ee from '../../lib/e2ee/index.js';
 import { useMediaSrc } from '../../lib/media.js';
 import { openDocument } from '../../lib/deviceFiles.js';
 import { readMessages } from '../../lib/localdb.js';
@@ -44,12 +45,19 @@ function MediaGrid({ convId }) {
   const setInfoOpen = useUI((s) => s.setInfoOpen);
 
   useEffect(() => {
+    // Encrypted messages: what this device decrypted (the server can't see what they contain).
+    const local = e2ee.localMessages({ conversationId: convId }).filter((m) => !m.viewOnce && (m.media || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
+    const localVisual = local.filter((m) => m.type === 'image' || m.type === 'video');
     api(`/api/conversations/shared?kind=media&limit=6&counts=1&conversationId=${convId}`)
-      .then((d) => setState({ items: d.items, total: d.counts?.all ?? d.items.length }))
+      .then((d) => {
+        const items = [...d.items, ...localVisual].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 6);
+        setState({ items, total: (d.counts?.all ?? d.items.length) + local.length });
+      })
       // Offline: from the messages saved on the device.
       .catch(() =>
         readMessages(convId, { limit: 2000 })
-          .then((all) => {
+          .then((saved) => {
+            const all = saved.map(e2ee.reveal);
             const shared = all.filter((m) => !m.deletedForEveryone && (m.media || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
             const visual = shared.filter((m) => m.type === 'image' || m.type === 'video').reverse();
             setState({ items: visual.slice(0, 6), total: shared.length });

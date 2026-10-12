@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
+import * as e2ee from '../../lib/e2ee/index.js';
 import { formatListTime } from '../../lib/format.js';
+import { plainMentions } from '../../lib/mentions.js';
 import { useAuth } from '../../store/auth.js';
 import { useChat } from '../../store/chat.js';
 import { useUI } from '../../store/ui.js';
@@ -31,9 +33,13 @@ export default function SearchPanel({ conv }) {
       return undefined;
     }
     const t = setTimeout(() => {
+      // Encrypted messages can only be searched on this device (the server can't read them).
+      const needle = q.toLowerCase();
+      const local = e2ee.localMessages({ conversationId: conv.id }).filter((m) => (m.text || '').toLowerCase().includes(needle));
+      const merge = (server) => [...server, ...local].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       api(`/api/conversations/${conv.id}/search?q=${encodeURIComponent(q)}`)
-        .then((d) => setResults(d.messages))
-        .catch(() => setResults([]));
+        .then((d) => setResults(merge(d.messages)))
+        .catch(() => setResults(merge([])));
     }, 250);
     return () => clearTimeout(t);
   }, [query, conv.id]);
@@ -57,7 +63,7 @@ export default function SearchPanel({ conv }) {
             <span>{formatListTime(m.createdAt)}</span>
           </span>
           <span className="search-text">
-            <Highlight text={m.text} query={query.trim()} />
+            <Highlight text={plainMentions(m.text, conv, me)} query={query.trim()} />
           </span>
         </button>
       ))}

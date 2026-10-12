@@ -16,6 +16,23 @@ const copied = new Set();
 /** Body for sending a message (socket `message:send` and REST POST share it). */
 export function sendPayload(msg) {
   const media = msg.remoteMedia || msg.media;
+  // End-to-end encrypted: only the ciphertext leaves the device, plus what the server needs
+  // to do its job (whom it mentions, the reply link, a view-once file's address, a poll's
+  // number of options).
+  if (msg.e2eeOut) {
+    const out = msg.e2eeOut;
+    return {
+      clientId: msg.clientId,
+      type: 'text',
+      text: '',
+      e2ee: { ciphertext: out.ciphertext, epoch: out.epoch },
+      mentions: out.mentions,
+      replyTo: msg.replyTo?.id ?? null,
+      forwarded: !!msg.forwarded,
+      ...(out.viewOnceUrl && { viewOnce: true, media: { url: out.viewOnceUrl } }),
+      ...(out.pollMeta && { pollMeta: out.pollMeta }),
+    };
+  }
   return {
     clientId: msg.clientId,
     type: msg.type,
@@ -25,8 +42,6 @@ export function sendPayload(msg) {
     replyTo: msg.replyTo?.id ?? null,
     forwarded: !!msg.forwarded,
     ...(msg.viewOnce && { viewOnce: true }),
-    // Encrypted text: only the ciphertext (and whom it mentions) leaves the device.
-    ...(msg.e2eeOut && { text: '', e2ee: { ciphertext: msg.e2eeOut.ciphertext, epoch: msg.e2eeOut.epoch }, mentions: msg.e2eeOut.mentions }),
     ...(msg.poll && { poll: { question: msg.poll.question, options: msg.poll.options.map((o) => o.text), multiple: !!msg.poll.multiple } }),
   };
 }

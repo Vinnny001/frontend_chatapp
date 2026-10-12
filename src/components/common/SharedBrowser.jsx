@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, Link2, Play, Search, Smartphone, Star } from 'lucide-react';
 import { api } from '../../lib/api.js';
+import * as e2ee from '../../lib/e2ee/index.js';
 import { formatBytes, formatListTime } from '../../lib/format.js';
 import { readMessages } from '../../lib/localdb.js';
 import { useMediaSrc } from '../../lib/media.js';
@@ -73,8 +74,16 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
     setState((s) => ({ ...s, loading: true }));
     try {
       const data = await api(`/api/conversations/shared?${params}`);
-      if (data.counts) setCounts(data.counts);
-      setState((s) => ({ items: before ? [...(s.items || []), ...data.items] : data.items, hasMore: data.hasMore, loading: false, offline: false }));
+      // End-to-end encrypted messages: the server can't see what they contain, so they come
+      // from what this device decrypted (all on the first page).
+      const local = before || tab === 'starred' ? [] : encryptedShared(tab, q);
+      if (data.counts) {
+        const mine = before ? {} : Object.fromEntries(SHARED_TABS.map((t) => [t.id, t.id === 'starred' ? 0 : encryptedShared(t.id, '').length]));
+        setCounts(Object.fromEntries(Object.entries(data.counts).map(([k, n]) => [k, n + (mine[k] || 0)])));
+      }
+      const fresh = data.items.map(e2ee.reveal);
+      const merged = before ? fresh : [...fresh, ...local].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      setState((s) => ({ items: before ? [...(s.items || []), ...merged] : merged, hasMore: data.hasMore, loading: false, offline: false }));
     } catch (e) {
       if (e.status !== 0) {
         toast(e.message, 'error');
@@ -83,7 +92,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
       }
       // Offline: search the messages saved on this device.
       const ids = conversationId ? [conversationId] : Object.keys(useChat.getState().conversations);
-      const all = (await Promise.all(ids.map((id) => readMessages(id, { limit: 2000 }).catch(() => [])))).flat();
+      const all = (await Promise.all(ids.map((id) => readMessages(id, { limit: 2000 }).catch(() => [])))).flat().map(e2ee.reveal);
       const needle = q.toLowerCase();
       const items = all
         .filter((m) => matchesKind(m, tab))
@@ -91,6 +100,15 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       setState({ items, hasMore: false, loading: false, offline: true });
     }
+  }
+
+  /** Encrypted messages this device decrypted that belong in a tab (they never reach the server's index). */
+  function encryptedShared(kind, search) {
+    const needle = search.toLowerCase();
+    return e2ee
+      .localMessages({ conversationId })
+      .filter((m) => !m.viewOnce && matchesKind(m, kind))
+      .filter((m) => !needle || `${m.text || ''} ${m.media?.name || ''}`.toLowerCase().includes(needle));
   }
 
   useEffect(() => {
