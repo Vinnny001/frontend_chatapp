@@ -56,6 +56,16 @@ For accounts listed in the API's `ADMIN_EMAILS`: ⋮ menu → **Admin**. Overvie
 - In a group, type **@** to pick a member (filter by name, @username or number; arrows/Enter or tap). They see it highlighted as **@You** and get a notification even if they muted the group; the chat list shows an **@** badge until they read it.
 - **Pin** / **Unpin** in a message's menu (up to 3 per chat; a 4th replaces the oldest). The bar under the chat header shows the newest pin; tap it to jump there, and again for the next one. In "only admins can send" groups, only admins can pin.
 
+## End-to-end encryption
+
+Text messages (with replies, @mentions and edits) are end-to-end encrypted with **MLS** (RFC 9420, the `ts-mls` library, cipher suite P-256 / AES-128-GCM / SHA-256, which every Android WebView supports):
+- Every signed-in device is a member of each of its chats' encryption groups. A message is encrypted **once** for the whole group however many devices there are (the key changes that add or remove devices grow with the logarithm of the group size).
+- Keys move forward with every message and are deleted after use, so a stolen key can't read earlier messages. Each device refreshes its own keys at least daily, and signed-out devices and people who leave are removed before the next message is sent, so a stolen key stops working for later ones.
+- Each device keeps its keys and the messages it decrypted in IndexedDB (`src/lib/e2ee`); they're deleted when you sign out on that device. A message can be decrypted only once, so the device's own copy is what you see from then on.
+- A chat switches to encryption by itself once everyone in it has an up-to-date app, and stays encrypted. Older messages stay readable (not encrypted). A newly linked device can't read messages from before it was linked yet (history transfer comes next).
+- Notifications for encrypted messages say "🔒 New message". In encrypted chats, the notification's Reply opens the chat (only the app can encrypt).
+- Not yet encrypted: photos, files, voice notes, polls, reactions and calls (next phases).
+
 ## Linked devices and sign-in approval
 
 - Signing in on a new device while another one is signed in needs **approval**: the new device shows a number, and your signed-in devices ask "Edge on Windows wants to sign in" (a notification on phones, even with the app closed). Tap the matching number of three; a wrong number blocks the sign-in. Can't reach your other device? **Email me a code** on the waiting screen.

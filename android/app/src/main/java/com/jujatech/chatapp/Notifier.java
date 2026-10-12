@@ -231,7 +231,8 @@ final class Notifier {
             String title = isGroup ? d.get("chatTitle") : Session.nameFor(context, d.get("senderId"), d.get("chatTitle"));
             chat.put("title", title)
                 .put("isGroup", isGroup)
-                .put("avatar", d.get("chatAvatar"));
+                .put("avatar", d.get("chatAvatar"))
+                .put("e2ee", "1".equals(d.get("e2ee")));
             JSONArray messages = chat.getJSONArray("messages");
             String messageId = d.get("messageId");
             for (int i = 0; i < messages.length(); i++) {
@@ -417,7 +418,7 @@ final class Notifier {
             .setGroup(GROUP)
             .setContentIntent(activity(context, "open", conversationId, null, null))
             .setDeleteIntent(broadcast(context, NotificationActionReceiver.DISMISS, conversationId, null, false))
-            .addAction(replyAction(context, conversationId))
+            .addAction(replyAction(context, conversationId, chat.optBoolean("e2ee")))
             .addAction(new NotificationCompat.Action.Builder(0, "Mark as read",
                     broadcast(context, NotificationActionReceiver.READ, conversationId, null, false))
                 .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
@@ -440,8 +441,15 @@ final class Notifier {
         return null;
     }
 
-    private static NotificationCompat.Action replyAction(Context context, String conversationId) {
+    private static NotificationCompat.Action replyAction(Context context, String conversationId, boolean encrypted) {
         RemoteInput input = new RemoteInput.Builder(REPLY_KEY).setLabel("Reply").build();
+        if (encrypted) {
+            // End-to-end encrypted chat: only the app can encrypt, so Reply opens the chat in
+            // ChatApp (an inline reply can't be encrypted here).
+            return new NotificationCompat.Action.Builder(0, "Reply", activity(context, "open", conversationId, null, null))
+                .setShowsUserInterface(true)
+                .build();
+        }
         return new NotificationCompat.Action.Builder(0, "Reply",
                 broadcast(context, NotificationActionReceiver.REPLY, conversationId, null, true))
             .addRemoteInput(input)

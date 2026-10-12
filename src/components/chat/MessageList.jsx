@@ -85,7 +85,11 @@ export default function MessageList({ conv }) {
         {thread?.loaded && !thread.hasMore && (
           <div className="system-pill intro">
             {conv.disappearingSeconds > 0 && <Timer size={13} />}
-            {conv.type === 'group' ? 'Messages in this group sync in real time across all your devices.' : 'This is the beginning of your conversation.'}
+            {conv.e2ee
+              ? '🔒 Messages are end-to-end encrypted. No one outside this chat, not even ChatApp, can read them.'
+              : conv.type === 'group'
+                ? 'Messages in this group sync in real time across all your devices.'
+                : 'This is the beginning of your conversation.'}
           </div>
         )}
         {items.map((m, i) => {

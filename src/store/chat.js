@@ -18,6 +18,7 @@ import { connectionKind } from '../lib/network.js';
 import { storage } from '../lib/storage.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { plainMentions } from '../lib/mentions.js';
+import * as e2ee from '../lib/e2ee/index.js';
 import { clearChatNotifications, setNativeNames, takeReceivedMessages } from '../lib/native.js';
 import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
@@ -60,7 +61,7 @@ const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStore
  * user's auto-download rules for the current connection (mobile data / Wi-Fi).
  */
 function keepOffline(messages) {
-  saveMessages(messages);
+  saveMessages(messages.map(e2ee.reveal));
   const allowed = new Set(useUI.getState().autoDownloadRules[connectionKind()] || []);
   prefetchMedia(mediaItemsOf(messages).filter((item) => allowed.has(item.kind)).map((item) => item.url));
 }
@@ -69,7 +70,8 @@ function keepOffline(messages) {
 function mergeItems(...lists) {
   const byKey = new Map();
   for (const list of lists) {
-    for (const m of list) {
+    for (const raw of list) {
+      const m = e2ee.reveal(raw); // encrypted messages: the text this device decrypted
       const key = keyOf(m);
       const prev = byKey.get(key);
       if (prev && !prev.pending && m.pending) continue;
@@ -107,6 +109,7 @@ function present(conv) {
   return {
     ...conv,
     participants: conv.participants.map((p) => ({ ...p, name: displayName(p), phone: knownPhone(p) || undefined })),
+    ...(conv.lastMessage && { lastMessage: e2ee.reveal(conv.lastMessage) }),
   };
 }
 
@@ -396,6 +399,7 @@ export const useChat = create((set, get) => {
       set({ activeId: id });
       useUI.getState().setInfoOpen(false);
       if (!id) return;
+      e2ee.prepare(id); // encryption keys ready before the first message is typed
       const t = get().threads[id];
       if ((!t?.loaded || t.stale) && !t?.loading) get().loadMessages(id);
       if (t?.loaded) get().markRead(id);
@@ -588,12 +592,29 @@ export const useChat = create((set, get) => {
       // Offline: keep it queued (clock icon). It is sent on reconnect, or on Android by the
       // background worker as soon as the network returns, even if the app is closed.
       if (!isOnline()) {
+        // Encrypted chats: encrypt it now with the keys this device has, so the background
+        // sender never sends plain text.
+        if (current().type === 'text' && get().conversations[convId]?.e2ee && !current().e2eeOut) {
+          const out = await e2ee.encryptText(convId, current().text, { offline: true }).catch(() => null);
+          if (!out) return; // can't encrypt offline: it goes when the app is back online
+          e2ee.rememberSent(`c:${msg.clientId}`, current().text, out.ciphertext);
+          patchItem(convId, msg.clientId, { e2eeOut: out });
+        }
         queueInBackground(current(), authToken(), fileFor(msg.clientId));
         return;
       }
 
       inFlight.add(msg.clientId);
       try {
+        // End-to-end encryption: text is encrypted once for every device in the chat. A retry
+        // sends the same ciphertext again (the server keeps one copy per clientId).
+        if (current().type === 'text' && !current().e2eeOut && e2ee.enabled()) {
+          const out = await e2ee.encryptText(convId, current().text);
+          if (out) {
+            e2ee.rememberSent(`c:${msg.clientId}`, current().text, out.ciphertext);
+            patchItem(convId, msg.clientId, { e2eeOut: out });
+          }
+        }
         if (current().needsUpload) {
           // In memory normally; after an app restart it comes back from on-device storage.
           const file = pendingFiles.get(msg.clientId) || (await getStoredMedia(pendingKey(msg.clientId)));
@@ -613,13 +634,15 @@ export const useChat = create((set, get) => {
           });
         }
 
-        const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(current()) }, 20000);
+        const sent = current();
+        const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(sent) }, 20000);
+        if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.text, sent.e2eeOut.ciphertext);
         cancelBackground(msg.clientId);
-        saveMessages([message]);
+        saveMessages([e2ee.reveal(message)]);
         addItems(convId, [message]);
         patchConversation(convId, (c) =>
           c.lastMessage?.clientId === message.clientId
-            ? { lastMessage: message, lastMessageAt: message.createdAt }
+            ? { lastMessage: e2ee.reveal(message), lastMessageAt: message.createdAt }
             : {}
         );
         if (useUI.getState().sounds) playSent();
@@ -650,7 +673,7 @@ export const useChat = create((set, get) => {
         patchConversation(convId, (c) =>
           c.lastMessage?.clientId === message.clientId ? { lastMessage: message, lastMessageAt: message.createdAt } : {}
         );
-        saveMessages([message]);
+        saveMessages([e2ee.reveal(message)]);
         // Then move our copy of the file under its real URL, so it never needs downloading.
         const clientId = message.clientId;
         pendingFiles.delete(clientId);
@@ -674,15 +697,54 @@ export const useChat = create((set, get) => {
     },
 
     /** Hands every queued message to the Android background sender (app going to background). */
-    queueAllInBackground() {
+    async queueAllInBackground() {
       for (const t of Object.values(get().threads)) {
-        for (const m of t.items) if (m.pending && m.status === 'pending') queueInBackground(m, authToken(), fileFor(m.clientId));
+        for (const m of t.items) {
+          if (!m.pending || m.status !== 'pending') continue;
+          let item = m;
+          if (m.type === 'text' && !m.e2eeOut && get().conversations[m.conversationId]?.e2ee) {
+            const out = await e2ee.encryptText(m.conversationId, m.text, { offline: true }).catch(() => null);
+            if (!out) continue; // sent by the app when it's open again
+            e2ee.rememberSent(`c:${m.clientId}`, m.text, out.ciphertext);
+            item = { ...m, e2eeOut: out };
+            patchItem(m.conversationId, m.clientId, { e2eeOut: out });
+          }
+          queueInBackground(item, authToken(), fileFor(m.clientId));
+        }
       }
+    },
+
+    /** Shows decrypted text for every encrypted message on screen (keys just became available). */
+    refreshRevealed() {
+      e2ee.retryWaiting();
+      set((s) => ({
+        threads: Object.fromEntries(Object.entries(s.threads).map(([id, t]) => [id, { ...t, items: t.items.map(e2ee.reveal) }])),
+        conversations: Object.fromEntries(
+          Object.entries(s.conversations).map(([id, c]) => [id, c.lastMessage ? { ...c, lastMessage: e2ee.reveal(c.lastMessage) } : c])
+        ),
+      }));
+    },
+
+    /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
+    onRevealed(m) {
+      if (!m?.conversationId) return;
+      patchItem(m.conversationId, m.id, { text: m.text, e2eeState: m.e2eeState });
+      patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, text: m.text, e2eeState: m.e2eeState } } : {}));
+      if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, text: m.text });
     },
 
     async editMessage(msg, text) {
       patchItem(msg.conversationId, msg.id, { text, editedAt: new Date().toISOString() });
       try {
+        if (msg.e2ee) {
+          // An encrypted message is edited with a new ciphertext.
+          const out = await e2ee.encryptText(msg.conversationId, text);
+          if (!out) throw new Error('Couldn’t encrypt the edit');
+          e2ee.rememberSent(msg.id, text, out.ciphertext);
+          await emitAck('message:edit', { messageId: msg.id, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch } });
+          patchItem(msg.conversationId, msg.id, { e2ee: { ...msg.e2ee, ciphertext: out.ciphertext, epoch: out.epoch } });
+          return;
+        }
         await emitAck('message:edit', { messageId: msg.id, text });
       } catch (e) {
         patchItem(msg.conversationId, msg.id, { text: msg.text, editedAt: msg.editedAt });
@@ -843,8 +905,10 @@ export const useChat = create((set, get) => {
       }
     },
 
-    async onMessageNew(msg, { quiet = false } = {}) {
+    async onMessageNew(incoming, { quiet = false } = {}) {
       const me = meId();
+      // Encrypted: decrypt first (the notification shows the real text).
+      const msg = incoming?.e2ee ? await e2ee.revealNow(incoming) : incoming;
       const convId = msg.conversationId;
       let fetched = false;
       if (!get().conversations[convId]) {
@@ -913,6 +977,12 @@ export const useChat = create((set, get) => {
     onMessageUpdated(patch) {
       const { id, conversationId, lastReaction, ...rest } = patch;
       const before = get().threads[conversationId]?.items.find((m) => m.id === id);
+      if (rest.e2ee) {
+        // An encrypted edit: decrypt the new version (the old text shows meanwhile).
+        const shown = e2ee.reveal({ ...(before || {}), id, conversationId, createdAt: before?.createdAt || new Date().toISOString(), ...rest });
+        rest.text = shown.text;
+        rest.e2eeState = shown.e2eeState;
+      }
       patchItem(conversationId, id, { id, conversationId, ...rest });
       patchStoredMessage({ id, conversationId, ...rest });
       patchConversation(conversationId, (c) => ({
@@ -1083,6 +1153,7 @@ export function previewText(msg) {
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
   if (msg.type === 'poll') return `📊 ${msg.poll?.question || 'Poll'}`;
   if (msg.viewOnce) return msg.type === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)';
+  if (msg.e2ee && msg.e2eeState !== 'ok' && !msg.text) return msg.e2eeState === 'before' ? '🔒 Message from before this device was linked' : '🔒 Message';
   const text = plainMentions(msg.text, useChat.getState().conversations[msg.conversationId], meId());
   if (msg.type === 'text' || msg.type === 'system') return text;
   if (msg.type === 'file') return labels.file + (msg.media?.name || 'Document');

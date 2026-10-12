@@ -1953,3 +1953,23 @@ button.composer-locked.blocked {
   padding-left: 26px;
   padding-right: 26px;
 }
+
+.encryption-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0 12px;
+  color: var(--text-2);
+}
+.encryption-row svg {
+  flex: none;
+  margin-top: 2px;
+}
+.encryption-row strong {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}
+.encryption-row small {
+  font-size: 13px;
+}

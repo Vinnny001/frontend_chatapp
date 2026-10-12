@@ -15,6 +15,8 @@ import { useGroupCall } from '../store/groupCall.js';
 import { useChat } from '../store/chat.js';
 import { toast } from '../store/ui.js';
 import { loginRequests } from '../components/LoginRequestPrompt.jsx';
+import * as e2ee from './e2ee/index.js';
+import { tokenDeviceId } from './device.js';
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
 export function useRealtime(token) {
@@ -25,12 +27,18 @@ export function useRealtime(token) {
     const calls = useCall.getState();
     const cleanups = [];
 
+    // 0) End-to-end encryption: this device's keys (decrypted messages show as they're ready).
+    cleanups.push(e2ee.onRevealed((m) => useChat.getState().onRevealed(m)));
+    const e2eeReady = e2ee.start({ userId, deviceId: tokenDeviceId(token) }).catch(() => {});
+
     // 1) Show the saved offline copy straight away, then refresh from the server.
     openLocalDb(userId);
     // Names people are shown under come from my contacts, so load those before the chats.
     useContactMatches.setState({ userId, data: cachedContactMatches(userId) });
     loadSavedContacts(userId).catch(() => {}); // offline: the saved copy is used
     chat.hydrate(loadCache(userId));
+    // Messages saved before the keys were loaded get their text once they are.
+    e2eeReady.then(() => useChat.getState().refreshRevealed());
     // Android: mark messages the background sender delivered while we were closed as sent,
     // and show messages that arrived by push while we were closed (works offline).
     chat.absorbBackgroundDeliveries();
@@ -133,6 +141,9 @@ export function useRealtime(token) {
       useChat.getState().onGroupCall(p);
       useGroupCall.getState().onUpdate(p);
     });
+    socket.on('mls:welcome', () => e2ee.onWelcome().then(() => useChat.getState().refreshRevealed()));
+    socket.on('mls:roster', () => e2ee.forgetRosters());
+    socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed
     socket.on('login:request', loginRequests.add);
     socket.on('login:request:done', loginRequests.done);
     socket.on('call:incoming', calls.onIncoming);

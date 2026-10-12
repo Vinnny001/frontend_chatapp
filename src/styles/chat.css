@@ -1598,3 +1598,16 @@ button.file-card {
 .poll-composer .error-text {
   color: var(--danger);
 }
+
+/* End-to-end encryption */
+.e2ee-waiting {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* room for the time (and "edited") below, like normal text */
+  padding-bottom: 14px;
+  color: var(--text-2);
+  font-style: italic;
+  font-size: 14px;
+}

@@ -9,6 +9,7 @@ import {
   FileText,
   Forward,
   Info,
+  Lock,
   Pencil,
   Phone,
   Pin,
@@ -42,6 +43,7 @@ import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { inviteCodeOf } from '../../lib/invites.js';
+import { plainText } from '../../lib/e2ee/index.js';
 import { PollBody } from './Poll.jsx';
 import { ViewOnceBody } from './ViewOnce.jsx';
 import { useCall } from '../../store/call.js';
@@ -108,7 +110,7 @@ function ReplyQuote({ reply, conv, me, onClick }) {
   const author = reply.sender === me ? 'You' : conv.participants.find((p) => p.id === reply.sender)?.name || 'Someone';
   const label = reply.deletedForEveryone
     ? 'This message was deleted'
-    : plainMentions(reply.text, conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
+    : plainMentions(reply.text || (reply.e2ee ? plainText(reply.id) || '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
   return (
     <button className="reply-quote" onClick={onClick}>
       <span className="reply-body">
@@ -367,6 +369,21 @@ function CallBubble({ msg, conv, me }) {
   );
 }
 
+const E2EE_LABELS = {
+  before: 'Sent before this device was linked',
+  failed: 'This message can’t be shown on this device',
+  own: 'Sent from this device, but its copy here was lost',
+};
+
+/** An encrypted message this device hasn't (or can't have) decrypted. */
+function E2eeWaiting({ state }) {
+  return (
+    <span className="e2ee-waiting">
+      <Lock size={13} /> {E2EE_LABELS[state] || 'Waiting for this message. This may take a while.'}
+    </span>
+  );
+}
+
 const LONG_TEXT = 500;
 
 /** Long messages show the first part with "Read more", like WhatsApp. */
@@ -447,7 +464,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             icon: pinned ? PinOff : Pin,
             onClick: () => chat.pinMessage(msg, !pinned),
           },
-          mine && msg.type === 'text' && age < EDIT_WINDOW_MS && {
+          mine && msg.type === 'text' && age < EDIT_WINDOW_MS && (!msg.e2ee || msg.e2eeState === 'ok') && {
             label: 'Edit',
             icon: Pencil,
             onClick: () => chat.setComposer(conv.id, { editing: msg, replyTo: null }),
@@ -513,6 +530,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             <>
               {msg.viewOnce ? <ViewOnceBody msg={msg} conv={conv} me={me} /> : hasMedia && <Media msg={msg} />}
               {msg.poll && <PollBody msg={msg} conv={conv} me={me} />}
+              {msg.e2ee && !msg.text && msg.e2eeState !== 'ok' && <E2eeWaiting state={msg.e2eeState} />}
               {msg.text && (
                 <span className="text">
                   <LongText text={msg.text} conv={conv} me={me} />

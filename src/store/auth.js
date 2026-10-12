@@ -3,6 +3,7 @@ import { api, setApiToken, setUnauthorizedHandler } from '../lib/api.js';
 import { storage } from '../lib/storage.js';
 import { unregisterPush } from '../lib/push.js';
 import { deviceInfo, tokenDeviceId } from '../lib/device.js';
+import { stop as stopE2ee } from '../lib/e2ee/index.js';
 
 const initialToken = storage.get('auth.token');
 setApiToken(initialToken);
@@ -101,6 +102,8 @@ export const useAuth = create((set, get) => ({
   logout({ server = true } = {}) {
     unregisterPush(); // uses the current login token, so it must start before it's cleared
     if (server && get().token) api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    // This device's encryption keys and decrypted messages go with the session.
+    stopE2ee({ wipe: true }).catch(() => {});
     setApiToken(null);
     storage.set('auth.token', null);
     storage.set('auth.user', null);

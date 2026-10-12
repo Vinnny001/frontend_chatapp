@@ -25,6 +25,8 @@ export function sendPayload(msg) {
     replyTo: msg.replyTo?.id ?? null,
     forwarded: !!msg.forwarded,
     ...(msg.viewOnce && { viewOnce: true }),
+    // Encrypted text: only the ciphertext (and whom it mentions) leaves the device.
+    ...(msg.e2eeOut && { text: '', e2ee: { ciphertext: msg.e2eeOut.ciphertext, epoch: msg.e2eeOut.epoch }, mentions: msg.e2eeOut.mentions }),
     ...(msg.poll && { poll: { question: msg.poll.question, options: msg.poll.options.map((o) => o.text), multiple: !!msg.poll.multiple } }),
   };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Link2, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, Ban, Link2, Lock, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
@@ -507,6 +507,17 @@ function InfoContent({ conv }) {
       <SaveOffline convId={conv.id} />
 
       <section className="info-card">
+        <div className="encryption-row">
+          <Lock size={18} />
+          <span>
+            <strong>Encryption</strong>
+            <small>
+              {conv.e2ee
+                ? 'Messages are end-to-end encrypted: only the devices of the people in this chat can read them.'
+                : 'Messages will be end-to-end encrypted once everyone here has the latest ChatApp.'}
+            </small>
+          </span>
+        </div>
         <label className="toggle-row">
           <span>
             {conv.me?.muted ? <BellOff size={18} /> : <Bell size={18} />} Mute notifications

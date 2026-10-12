@@ -73,6 +73,8 @@ public class NotificationActionReceiver extends BroadcastReceiver {
             try {
                 Session.postJson(url, token, body);
             } catch (Session.HttpStatus e) {
+                // 409: the chat became end-to-end encrypted; only the app can send there.
+                if (e.code == 409) Notifier.appendOwnReply(context, conversationId, "Not sent: open ChatApp to reply in this encrypted chat");
                 return; // signed out or no longer in the chat: nothing to retry
             } catch (Exception e) {
                 // Offline: the background sender delivers it once the phone is back online.

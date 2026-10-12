@@ -20,12 +20,15 @@
     "@capacitor/network": "^8.0.1",
     "@capacitor/push-notifications": "^8.1.2",
     "@capacitor/share": "^8.0.2",
+    "@noble/ciphers": "2.1.1",
+    "@noble/curves": "2.0.1",
     "idb": "^8.0.3",
     "livekit-client": "^2.22.3",
     "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "socket.io-client": "^4.8.4",
+    "ts-mls": "1.6.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
