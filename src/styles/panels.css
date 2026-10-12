@@ -1973,3 +1973,58 @@ button.composer-locked.blocked {
 .encryption-row small {
   font-size: 13px;
 }
+
+/* Sync choice on a new device */
+.sync-choice {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  max-width: 460px;
+}
+.sync-choice h2 {
+  margin: 4px 0 0;
+}
+.sync-choice > p {
+  margin: 0 0 6px;
+  color: var(--text-2);
+}
+.sync-choice-icon {
+  color: var(--accent);
+}
+.sync-choice-options {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+.sync-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--panel);
+}
+.sync-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sync-option svg {
+  flex: none;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.sync-option span {
+  display: grid;
+  gap: 3px;
+}
+.sync-option small {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.devices-sync {
+  padding: 4px 16px 10px;
+}

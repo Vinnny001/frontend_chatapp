@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { api } from './api.js';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Network } from '@capacitor/network';
 import { connectSocket, disconnectSocket, setAppActive } from './socket.js';
@@ -46,6 +47,11 @@ export function useRealtime(token) {
     chat.hydrate(loadCache(userId));
     // Messages saved before the keys were loaded get their text once they are.
     e2eeReady.then(() => useChat.getState().refreshRevealed());
+    // My other devices share history and contacts with this one, if it syncs (null = never asked: syncs).
+    e2eeReady
+      .then(() => api('/api/devices'))
+      .then(({ devices }) => devices.find((d) => d.current)?.sync !== false && e2ee.startOwnDevices())
+      .catch(() => {});
     // Android: mark messages the background sender delivered while we were closed as sent,
     // and show messages that arrived by push while we were closed (works offline).
     chat.absorbBackgroundDeliveries();

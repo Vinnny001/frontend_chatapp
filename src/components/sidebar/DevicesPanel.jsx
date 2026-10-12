@@ -4,6 +4,8 @@ import SidePanel from './SidePanel.jsx';
 import { api } from '../../lib/api.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
+import { useChat } from '../../store/chat.js';
+import * as e2ee from '../../lib/e2ee/index.js';
 import { toast, useUI } from '../../store/ui.js';
 
 const HOW = { first: 'Password', device: 'Approved on another device', email: 'Email code', reset: 'Password reset', signup: 'Account created here', legacy: 'Signed in before linked devices' };
@@ -46,6 +48,23 @@ export default function DevicesPanel() {
   }
 
   const current = devices?.find((d) => d.current);
+
+  async function setSync(sync) {
+    try {
+      await api('/api/devices/me', { method: 'PATCH', body: { sync } });
+      if (sync) {
+        await e2ee.startOwnDevices(); // asks my other devices for history, shares contacts
+        await useChat.getState().resync(); // earlier messages are shown again
+        toast('This device now syncs with your other devices');
+      } else {
+        e2ee.stopOwnDevices();
+        toast('This device no longer syncs');
+      }
+      load();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
   const others = devices?.filter((d) => !d.current) || [];
   const Row = ({ d }) => {
     const Icon = d.platform === 'web' ? Globe : Smartphone;
@@ -80,6 +99,13 @@ export default function DevicesPanel() {
         <>
           <h3 className="section-label">This device</h3>
           <Row d={current} />
+          <label className="toggle-row devices-sync">
+            <span>
+              Sync with my other devices
+              <small>Recent chat history and contact names, end-to-end encrypted. Off: only new messages on this device.</small>
+            </span>
+            <input type="checkbox" className="switch" checked={current.sync !== false} onChange={(e) => setSync(e.target.checked)} />
+          </label>
         </>
       )}
       {devices && (

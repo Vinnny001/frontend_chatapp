@@ -61,20 +61,27 @@ async function startNow({ userId, deviceId }) {
     console.warn('[e2ee] setup failed; messages stay unencrypted on this device for now', err);
   }
   drainSoon();
-  // The encrypted channel between my own devices (history for new devices, contacts).
-  if (mls.active()) {
-    startSync({
-      deviceId,
-      db,
-      hooks: {
-        records: () => [...plain.entries()],
-        importRecords: importHistory,
-        onContacts: (...args) => appHooks.onContacts(...args),
-        ownContacts: () => appHooks.ownContacts(),
-      },
-    }).catch((err) => console.warn('[e2ee] own-devices channel unavailable', err));
-  }
 }
+
+/**
+ * The encrypted channel between my own devices (history for a new device, contacts). Only for
+ * devices that sync (the user chooses on a new device; Settings → Linked devices).
+ */
+export async function startOwnDevices() {
+  if (!session || !mls.active()) return;
+  await startSync({
+    deviceId: session.deviceId,
+    db: session.db,
+    hooks: {
+      records: () => [...plain.entries()],
+      importRecords: importHistory,
+      onContacts: (...args) => appHooks.onContacts(...args),
+      ownContacts: () => appHooks.ownContacts(),
+    },
+  }).catch((err) => console.warn('[e2ee] own-devices channel unavailable', err));
+}
+
+export const stopOwnDevices = () => stopSync();
 
 /** History from another of my devices: what it decrypted (I couldn't: I joined later). */
 function importHistory(records) {

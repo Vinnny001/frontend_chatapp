@@ -77,6 +77,9 @@ async function handle(body, m) {
     if (Date.now() - Date.parse(m.at) > ANSWER_WITHIN_MS) return;
     if (await ctx.db.get('kv', `answered:${body.device}`)) return;
     await sendHistory(body.device);
+    // and my contacts (it couldn't read what I shared before it joined)
+    const last = await ctx.db.get('kv', 'contactsList');
+    if (last) await send({ kind: 'contacts', entries: last }).catch(() => {});
     await ctx.db.put('kv', `answered:${body.device}`, Date.now());
   } else if (body.kind === 'history' && body.to === ctx.deviceId) {
     ctx.hooks.importRecords(body.records || []);
@@ -118,5 +121,8 @@ export async function publishContacts(entries) {
     .sort((a, b) => a.user.id.localeCompare(b.user.id));
   const hash = JSON.stringify(list);
   if ((await ctx.db.get('kv', 'contactsSent')) === hash) return;
-  if (await send({ kind: 'contacts', entries: list }).catch(() => false)) await ctx.db.put('kv', 'contactsSent', hash);
+  if (await send({ kind: 'contacts', entries: list }).catch(() => false)) {
+    await ctx.db.put('kv', 'contactsSent', hash);
+    await ctx.db.put('kv', 'contactsList', list); // re-sent to a device that syncs later
+  }
 }

@@ -7,6 +7,7 @@ import { useUI } from './store/ui.js';
 import { useRealtime } from './lib/useRealtime.js';
 import AuthScreen from './components/AuthScreen.jsx';
 import VerifyEmailScreen from './components/VerifyEmailScreen.jsx';
+import SyncChoiceScreen from './components/SyncChoiceScreen.jsx';
 import Sidebar from './components/sidebar/Sidebar.jsx';
 import ChatView from './components/chat/ChatView.jsx';
 import EmptyChat from './components/chat/EmptyChat.jsx';
@@ -140,10 +141,11 @@ export default function App() {
   const token = useAuth((s) => s.token);
   // Signed up (or signed in) but the email isn't confirmed yet: only the code screen.
   const emailPending = useAuth((s) => s.user?.emailVerified === false);
+  const syncChoice = useAuth((s) => s.syncChoice);
   useTheme();
   return (
     <>
-      {!token ? <AuthScreen /> : emailPending ? <VerifyEmailScreen /> : <Messenger token={token} />}
+      {!token ? <AuthScreen /> : emailPending ? <VerifyEmailScreen /> : syncChoice ? <SyncChoiceScreen /> : <Messenger token={token} />}
       <Toasts />
     </>
   );

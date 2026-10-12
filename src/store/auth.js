@@ -13,6 +13,8 @@ export const useAuth = create((set, get) => ({
   user: storage.get('auth.user'),
   // A sign-in waiting for approval on another device: { request: { id, secret, match, expiresAt }, devices, email }
   approval: null,
+  // Signed in on a new device next to my other ones: ask whether to sync before showing chats.
+  syncChoice: !!storage.get('auth.syncChoice'),
 
   async login(identifier, password) {
     const res = await api('/api/auth/login', { method: 'POST', body: { identifier, password, device: deviceInfo() } });
@@ -27,6 +29,7 @@ export const useAuth = create((set, get) => ({
     const res = await api(`/api/auth/login-requests/${a.request.id}`, { headers: { 'x-request-secret': a.request.secret } });
     if (res.status === 'approved') {
       set({ approval: null });
+      get().askSync();
       get().setSession(res.token, res.user);
     }
     return res.status;
@@ -42,6 +45,7 @@ export const useAuth = create((set, get) => ({
     const { request } = get().approval;
     const res = await api(`/api/auth/login-requests/${request.id}/email/verify`, { method: 'POST', body: { secret: request.secret, code } });
     set({ approval: null });
+    get().askSync();
     get().setSession(res.token, res.user);
   },
 
@@ -49,6 +53,18 @@ export const useAuth = create((set, get) => ({
     const a = get().approval;
     set({ approval: null });
     if (a) api(`/api/auth/login-requests/${a.request.id}`, { method: 'DELETE', body: { secret: a.request.secret } }).catch(() => {});
+  },
+
+  askSync() {
+    storage.set('auth.syncChoice', true);
+    set({ syncChoice: true });
+  },
+
+  /** Sync this device with my other devices (history + contacts), or start fresh. */
+  async chooseSync(sync) {
+    await api('/api/devices/me', { method: 'PATCH', body: { sync } });
+    storage.set('auth.syncChoice', null);
+    set({ syncChoice: false });
   },
 
   /** Sessions from before linked devices: register this device once (keeps you signed in). */
@@ -107,7 +123,8 @@ export const useAuth = create((set, get) => ({
     setApiToken(null);
     storage.set('auth.token', null);
     storage.set('auth.user', null);
-    set({ token: null, user: null });
+    storage.set('auth.syncChoice', null);
+    set({ token: null, user: null, syncChoice: false });
   },
 }));
 
