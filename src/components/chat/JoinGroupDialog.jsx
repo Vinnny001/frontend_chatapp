@@ -31,11 +31,28 @@ export default function JoinGroupDialog() {
   async function join() {
     setJoining(true);
     try {
-      const { conversation } = await api(`/api/invites/${code}/join`, { method: 'POST' });
+      const { conversation, requested } = await api(`/api/invites/${code}/join`, { method: 'POST' });
+      if (requested) {
+        // An admin has to approve: the group appears in the chat list once they do.
+        setInfo((i) => ({ ...i, requested: true }));
+        return;
+      }
       const chat = useChat.getState();
       chat.upsertConversation(conversation);
       chat.openConversation(conversation.id);
       close();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  async function cancelRequest() {
+    setJoining(true);
+    try {
+      await api(`/api/invites/${code}/join`, { method: 'DELETE' });
+      setInfo((i) => ({ ...i, requested: false }));
     } catch (e) {
       toast(e.message, 'error');
     } finally {
@@ -72,10 +89,20 @@ export default function JoinGroupDialog() {
             >
               Open group
             </button>
+          ) : info.requested ? (
+            <>
+              <p className="join-pending">Request sent. You’ll join as soon as an admin approves it.</p>
+              <button className="btn btn-ghost" onClick={cancelRequest} disabled={joining}>
+                Cancel request
+              </button>
+            </>
           ) : (
-            <button className="btn btn-primary" onClick={join} disabled={joining}>
-              {joining ? 'Joining…' : 'Join group'}
-            </button>
+            <>
+              <button className="btn btn-primary" onClick={join} disabled={joining}>
+                {joining ? 'Joining…' : g.approveJoins ? 'Request to join' : 'Join group'}
+              </button>
+              {g.approveJoins && <p className="hint">An admin approves new members of this group.</p>}
+            </>
           )}
           {info.member && <p className="hint">You're already in this group.</p>}
         </div>

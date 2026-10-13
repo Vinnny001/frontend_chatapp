@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Bell, BellOff, Eraser, Info, MoreVertical, Phone, Search, Timer, Video, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bell, BellOff, Eraser, Info, MoreVertical, Phone, Search, Timer, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
 import { formatLastSeen } from '../../lib/format.js';
@@ -104,6 +104,7 @@ export default function ChatHeader({ conv }) {
           onClose={() => setMenu(null)}
           items={[
             { label: conv.type === 'group' ? 'Group info' : peer ? 'Contact info' : 'Chat info', icon: Info, onClick: () => setInfoOpen('info') },
+            conv.type === 'group' && conv.me?.role === 'admin' && { label: 'Group dashboard', icon: BarChart3, onClick: () => setInfoOpen('dashboard') },
             { label: 'Disappearing messages', icon: Timer, onClick: () => setInfoOpen('info') },
             {
               label: conv.me?.muted ? 'Unmute notifications' : 'Mute notifications',
@@ -116,7 +117,7 @@ export default function ChatHeader({ conv }) {
               onClick: () => window.confirm('Clear all messages in this chat for you?') && clearChat(conv.id).catch((e) => toast(e.message, 'error')),
             },
             { label: 'Close chat', icon: X, onClick: closeConversation },
-          ]}
+          ].filter(Boolean)}
         />
       )}
     </header>

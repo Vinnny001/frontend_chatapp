@@ -245,6 +245,12 @@ export default function SettingsPanel() {
           checked={!!user.settings?.showEmail}
           onChange={(showEmail) => update({ settings: { showEmail } })}
         />
+        <Toggle
+          label="Share my activity in group insights"
+          hint="Group admins see how many messages you sent and when you last posted. When off, you’re only part of the group’s totals."
+          checked={user.settings?.shareGroupActivity !== false}
+          onChange={(shareGroupActivity) => update({ settings: { shareGroupActivity } })}
+        />
       </div>
 
       <h3 className="section-label">Appearance</h3>

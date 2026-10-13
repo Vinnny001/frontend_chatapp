@@ -93,6 +93,9 @@ final class Notifier {
                 // Shown even with the app open: the app also shows its own prompt.
                 showLoginRequest(context, data);
                 break;
+            case "join_request":
+                if (!Session.foreground) showJoinRequest(context, data);
+                break;
             case "login_request_done":
                 NotificationManagerCompat.from(context).cancel(TAG_LOGIN + data.get("requestId"), ID);
                 break;
@@ -534,6 +537,24 @@ final class Notifier {
             .setContentIntent(activity(context, "home", null, null, null));
         //noinspection MissingPermission (checked by canNotify)
         NotificationManagerCompat.from(context).notify(TAG_LOGIN + requestId, ID, builder.build());
+    }
+
+    /** Someone asked to join a group I'm an admin of (by its invite link). Opens the group. */
+    private static void showJoinRequest(Context context, Map<String, String> d) {
+        String conversationId = d.get("conversationId");
+        if (conversationId == null || !canNotify(context)) return;
+        String who = d.get("requesterName") == null || d.get("requesterName").isEmpty() ? "Someone" : d.get("requesterName");
+        String group = d.get("groupName") == null ? "your group" : d.get("groupName");
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_chat)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle(group)
+            .setContentText(who + " asked to join. Tap to review.")
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setAutoCancel(true)
+            .setContentIntent(activity(context, "open", conversationId, null, null));
+        //noinspection MissingPermission (checked by canNotify)
+        NotificationManagerCompat.from(context).notify("join:" + conversationId, ID, builder.build());
     }
 
     // ------------------------------------------------------------------ calls

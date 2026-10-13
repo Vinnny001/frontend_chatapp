@@ -2088,3 +2088,263 @@ button.composer-locked.blocked {
 .e2ee-banner .link-btn {
   flex: none;
 }
+
+/* ---------- Group settings */
+.group-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.group-setting:first-of-type {
+  border-top: 0;
+}
+.group-setting-label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--text);
+}
+.group-setting-label svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+.group-setting-label small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.group-setting .segmented {
+  margin-left: 30px;
+}
+.icon-btn.accent {
+  color: var(--accent);
+}
+.join-pending {
+  color: var(--accent-strong);
+  font-weight: 500;
+  text-align: center;
+  margin: 4px 0;
+}
+
+/* ---------- Group dashboard */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.dash-range {
+  align-self: stretch;
+}
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.dash-stat {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dash-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.dash-stat-label {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.dash-stat-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.dash-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+.dash-chart {
+  margin: 0;
+}
+.dash-chart figcaption {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.dash-plot {
+  position: relative;
+  height: 130px;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.dash-plot svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.dash-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.dash-base {
+  stroke: var(--text-3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.dash-bar {
+  fill: var(--accent);
+}
+.dash-col {
+  fill: var(--hover);
+}
+.dash-max {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--panel);
+  padding-right: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.dash-tip {
+  position: absolute;
+  top: -6px;
+  background: var(--text);
+  color: var(--panel);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+.dash-tip span {
+  display: block;
+  opacity: 0.8;
+  font-size: 11.5px;
+}
+.dash-axis {
+  position: relative;
+  height: 16px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.dash-axis span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+.dash-note {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 10px 0 0;
+}
+.dash-members-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dash-members-head select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+.dash-member {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.dash-member-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dash-member-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dash-member-top .person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-count {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+}
+.dash-count svg {
+  color: var(--text-3);
+}
+.dash-meter {
+  display: block;
+  height: 4px;
+  background: var(--panel-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dash-meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.dash-member .person-sub {
+  white-space: normal;
+}
+.dash-contact {
+  word-break: break-word;
+}
+.dash-privacy {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: 0 4px;
+}
+.dash-privacy svg {
+  flex: none;
+  margin-top: 2px;
+}

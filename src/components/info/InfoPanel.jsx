@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Link2, Lock, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, Ban, BarChart3, Link2, Settings2, UserCheck, Lock, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
@@ -8,6 +8,8 @@ import SearchPanel from './SearchPanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
 import ReportDialog from '../common/ReportDialog.jsx';
 import InviteLinkDialog from './InviteLinkDialog.jsx';
+import GroupSettings, { JoinRequests } from './GroupSettings.jsx';
+import GroupDashboard from './GroupDashboard.jsx';
 import { PersonRow } from '../sidebar/NewChatPanel.jsx';
 import { usePeopleSearch } from '../sidebar/SidePanel.jsx';
 import { api } from '../../lib/api.js';
@@ -378,7 +380,10 @@ function InfoContent({ conv }) {
   const iHideLastSeen = useAuth((s) => s.user?.settings?.showLastSeen === false);
   const isGroup = conv.type === 'group';
   const amAdmin = isGroup && conv.me?.role === 'admin';
-  const canEdit = !isGroup || amAdmin;
+  // Group settings decide whether members may edit the group's info and add people.
+  const canEdit = !isGroup || amAdmin || conv.permissions?.editInfo === 'all';
+  const canAdd = isGroup && (amAdmin || conv.permissions?.addMembers === 'all');
+  const [reviewing, setReviewing] = useState(false);
   const title = conversationTitle(conv, me);
 
   const save = async (data) => {
@@ -411,7 +416,7 @@ function InfoContent({ conv }) {
     <>
       <section className="info-hero">
         {isGroup ? (
-          <AvatarPicker url={conv.avatarUrl} name={title} group size={150} disabled={!amAdmin} onChange={(avatarUrl) => save({ avatarUrl })} />
+          <AvatarPicker url={conv.avatarUrl} name={title} group size={150} disabled={!canEdit} onChange={(avatarUrl) => save({ avatarUrl })} />
         ) : (
           <Avatar name={title} url={chatAvatarUrl(conv, me)} size={150} onClick={chatAvatarUrl(conv, me) ? () => useUI.getState().openViewer({ url: chatAvatarUrl(conv, me), type: 'image', name: title, noDownload: !isSelfChat(conv, me) }) : undefined} />
         )}
@@ -425,7 +430,7 @@ function InfoContent({ conv }) {
         ) : (
           <h2>
             {title}
-            {amAdmin && (
+            {isGroup && canEdit && (
               <button className="icon-btn sm" onClick={() => setEditingName(true)} aria-label="Edit group name">
                 <Pencil size={16} />
               </button>
@@ -460,7 +465,7 @@ function InfoContent({ conv }) {
               </button>
             </>
           )}
-          {amAdmin && (
+          {canAdd && (
             <button onClick={() => setAdding(true)}>
               <UserPlus size={20} />
               Add
@@ -497,8 +502,8 @@ function InfoContent({ conv }) {
                 </div>
               </div>
             ) : (
-              <button className="desc" disabled={!amAdmin} onClick={() => setEditingDesc(true)}>
-                {conv.description || (amAdmin ? 'Add group description' : 'No description')}
+              <button className="desc" disabled={!canEdit} onClick={() => setEditingDesc(true)}>
+                {conv.description || (canEdit ? 'Add group description' : 'No description')}
               </button>
             )
           ) : (
@@ -545,20 +550,46 @@ function InfoContent({ conv }) {
             ))}
           </select>
         </label>
-        {amAdmin && (
-          <label className="toggle-row">
-            <span>
-              <ShieldCheck size={18} /> Only admins can send messages
-            </span>
-            <input type="checkbox" className="switch" checked={conv.onlyAdminsCanSend} onChange={(e) => save({ onlyAdminsCanSend: e.target.checked })} />
-          </label>
-        )}
       </section>
+
+      {amAdmin && (
+        <section className="info-card">
+          {conv.pendingJoins > 0 && (
+            <button className="person-row action" onClick={() => setReviewing(true)}>
+              <span className="action-icon">
+                <UserCheck size={20} />
+              </span>
+              <span className="person-name">Pending requests to join</span>
+              <span className="badge">{conv.pendingJoins}</span>
+            </button>
+          )}
+          <button className="person-row action" onClick={() => setInfoOpen('group-settings')}>
+            <span className="action-icon">
+              <Settings2 size={20} />
+            </span>
+            <span className="person-info">
+              <span className="person-name">Group settings</span>
+              <span className="person-sub">Who can edit info, send messages and add people</span>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          <button className="person-row action" onClick={() => setInfoOpen('dashboard')}>
+            <span className="action-icon">
+              <BarChart3 size={20} />
+            </span>
+            <span className="person-info">
+              <span className="person-name">Group dashboard</span>
+              <span className="person-sub">Messages, busiest times and members’ activity</span>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        </section>
+      )}
 
       {isGroup && (
         <section className="info-card">
           <h3 className="section-label">{conv.participants.length} members</h3>
-          {amAdmin && (
+          {canAdd && (
             <button className="person-row action" onClick={() => setAdding(true)}>
               <span className="action-icon">
                 <UserPlus size={20} />
@@ -596,6 +627,7 @@ function InfoContent({ conv }) {
 
       {adding && <AddMembersModal conv={conv} onClose={() => setAdding(false)} />}
       {inviting && <InviteLinkDialog conv={conv} onClose={closeInvite} />}
+      {reviewing && <JoinRequests conv={conv} onClose={() => setReviewing(false)} />}
     </>
   );
 }
@@ -612,13 +644,14 @@ export default function InfoPanel({ convId }) {
         <button className="icon-btn" onClick={() => setInfoOpen(false)} aria-label="Close">
           <X size={22} />
         </button>
-        {mode === 'media' && (
+        {['media', 'group-settings', 'dashboard'].includes(mode) && (
           <button className="icon-btn" onClick={() => setInfoOpen('info')} aria-label="Back to info">
             <ArrowLeft size={20} />
           </button>
         )}
         <h2>
-          {mode === 'search' ? 'Search messages' : mode === 'media' ? 'Media, links and docs' : conv.type === 'group' ? 'Group info' : 'Contact info'}
+          {{ search: 'Search messages', media: 'Media, links and docs', 'group-settings': 'Group settings', dashboard: 'Group dashboard' }[mode] ||
+            (conv.type === 'group' ? 'Group info' : 'Contact info')}
         </h2>
       </header>
       <div className="info-body">
@@ -626,6 +659,10 @@ export default function InfoPanel({ convId }) {
           <SearchPanel conv={conv} />
         ) : mode === 'media' ? (
           <SharedBrowser key={conv.id} conversationId={conv.id} />
+        ) : mode === 'group-settings' && conv.type === 'group' ? (
+          <GroupSettings key={conv.id} conv={conv} />
+        ) : mode === 'dashboard' && conv.type === 'group' ? (
+          <GroupDashboard key={conv.id} conv={conv} />
         ) : (
           <InfoContent key={conv.id} conv={conv} />
         )}
