@@ -14,7 +14,14 @@ export default function E2eeBanner() {
     <div className="e2ee-banner" role="alert">
       <ShieldAlert size={18} />
       <span>
-        <strong>Encryption couldn’t start on this device.</strong> Messages you send here aren’t end-to-end encrypted. <small>{status.message}</small>
+        <strong>Encryption couldn’t start on this device.</strong> Messages you send here aren’t end-to-end encrypted.{' '}
+        {status.stage === 'storage' && !/tab/.test(status.message) && (
+          <>
+            The browser couldn’t open its storage for this site. Clear it: click the icon left of the address, then{' '}
+            <em>Site settings → Delete data</em>, and sign in again.{' '}
+          </>
+        )}
+        <small>{status.message}</small>
       </span>
       <button className="link-btn" onClick={() => window.location.reload()}>
         Retry

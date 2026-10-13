@@ -88,9 +88,20 @@ async function startNow({ userId, deviceId }) {
   try {
     db = await openDb(dbName(userId, deviceId));
   } catch (err) {
-    failed('storage', err);
-    starting = null;
-    return;
+    // The browser's own failure (e.g. Chrome's "Internal error." on damaged files): unreadable
+    // data is lost anyway, so start this device's database over once. Not when another tab holds it.
+    if (err instanceof DOMException) {
+      console.warn('[e2ee] storage damaged, starting it over', err);
+      await deleteDb(dbName(userId, deviceId));
+      db = await openDb(dbName(userId, deviceId)).catch((again) => {
+        failed('storage', again);
+        return null;
+      });
+    } else failed('storage', err);
+    if (!db) {
+      starting = null;
+      return;
+    }
   }
   session = { userId, deviceId, db };
   for (const [id, rec] of await db.entries('plain')) {
