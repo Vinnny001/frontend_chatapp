@@ -445,20 +445,10 @@ final class Notifier {
     }
 
     private static NotificationCompat.Action replyAction(Context context, String conversationId, boolean encrypted) {
-        RemoteInput input = new RemoteInput.Builder(REPLY_KEY).setLabel("Reply").build();
-        if (encrypted) {
-            // End-to-end encrypted chat: only the app can encrypt, so Reply opens the chat in
-            // ChatApp (an inline reply can't be encrypted here).
-            return new NotificationCompat.Action.Builder(0, "Reply", activity(context, "open", conversationId, null, null))
-                .setShowsUserInterface(true)
-                .build();
-        }
-        return new NotificationCompat.Action.Builder(0, "Reply",
-                broadcast(context, NotificationActionReceiver.REPLY, conversationId, null, true))
-            .addRemoteInput(input)
-            .setAllowGeneratedReplies(true)
-            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
-            .setShowsUserInterface(false)
+        // Every message is end-to-end encrypted and only the app can encrypt, so Reply opens
+        // the chat in ChatApp (an inline reply from the notification couldn't be encrypted).
+        return new NotificationCompat.Action.Builder(0, "Reply", activity(context, "open", conversationId, null, null))
+            .setShowsUserInterface(true)
             .build();
     }
 

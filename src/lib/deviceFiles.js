@@ -5,7 +5,7 @@ import { ensureMedia } from './media.js';
 // Android/iOS: files in the app's private native storage (DeviceFilesPlugin.java / .swift).
 // Used to open documents in the phone's viewer (Android apps / iOS Quick Look) and to hand
 // media to the background sender.
-const DeviceFiles = registerPlugin('DeviceFiles');
+export const DeviceFiles = registerPlugin('DeviceFiles');
 export const nativeFilesSupported = () => ['android', 'ios'].includes(Capacitor.getPlatform());
 
 const CHUNK_BYTES = 512 * 1024;

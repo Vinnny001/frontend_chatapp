@@ -2063,30 +2063,67 @@ button.composer-locked.blocked {
   padding: 4px 16px 10px;
 }
 
-/* Encryption couldn't start on this device */
-.e2ee-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 6px 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+/* Encryption couldn't start on this device: the app is blocked until it can */
+.e2ee-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--bg);
+  overflow-y: auto;
+}
+.e2ee-gate-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 28px 22px;
+  text-align: center;
   color: var(--text);
-  font-size: 13px;
 }
-.e2ee-banner svg {
-  flex: none;
+.e2ee-gate-icon {
   color: var(--danger);
-  margin-top: 1px;
+  margin-bottom: 8px;
 }
-.e2ee-banner small {
-  display: block;
-  margin-top: 2px;
+.e2ee-gate-card h2 {
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+.e2ee-gate-card p {
   color: var(--text-2);
+  margin: 0 0 10px;
+  line-height: 1.45;
 }
-.e2ee-banner .link-btn {
-  flex: none;
+.e2ee-gate-space {
+  font-weight: 600;
+  color: var(--text) !important;
+}
+.e2ee-gate-reason {
+  font-size: 12.5px;
+  color: var(--text-3) !important;
+}
+.e2ee-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.e2ee-gate-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.e2ee-gate-steps {
+  text-align: left;
+  color: var(--text-2);
+  font-size: 14px;
+  margin: 16px 0 0;
+  padding-left: 20px;
+  line-height: 1.5;
 }
 
 /* ---------- Group settings */

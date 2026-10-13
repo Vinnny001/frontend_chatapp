@@ -322,15 +322,13 @@ async function reconcile(convId, g, info) {
   throw new Error('Couldn’t update the encryption keys. Try again.');
 }
 
-/**
- * Gets this device's group for a chat ready to send: joins or creates it as needed, catches
- * up and reconciles. Null when the chat isn't encrypted (a member's app can't do it yet).
- */
+/** Gets this device's group for a chat ready to send: joins or creates it as needed, catches up and reconciles. */
 async function ready(convId) {
   for (let tries = 0; tries < 8; tries++) {
     const info = await rosterInfo(convId, { fresh: tries > 0 });
     if (!info.enabled) {
-      if (!info.ready) return null;
+      // Encryption is required: start now with the devices there are (members without one
+      // get the messages sent again when they have one).
       const started = await startGroup(convId);
       if (!started) continue;
       const g = await reconcile(convId, started, info);

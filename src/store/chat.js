@@ -631,12 +631,10 @@ export const useChat = create((set, get) => {
       // Always work from the latest copy: a retry may pass a stale snapshot.
       const current = () => get().threads[convId]?.items.find((m) => m.clientId === msg.clientId) || msg;
       patchItem(convId, msg.clientId, { status: 'pending' });
-      const encryptedChat = () => !!get().conversations[convId]?.e2ee;
-
       // Offline: keep it queued (clock icon). It is sent on reconnect, or on Android by the
       // background worker as soon as the network returns, even if the app is closed.
       if (!isOnline()) {
-        if (encryptedChat() && !current().e2eeOut) {
+        if (!current().e2eeOut) {
           // The background sender never sends plain content into an encrypted chat: text is
           // encrypted now with this device's keys; attachments wait for the app (the file
           // has to be encrypted before it's uploaded).
@@ -650,9 +648,11 @@ export const useChat = create((set, get) => {
 
       inFlight.add(msg.clientId);
       try {
-        // End-to-end encryption: decided before anything leaves the device (the file is
-        // encrypted before it's uploaded). A retry reuses the same ciphertext.
-        const encrypt = !current().e2eeOut && e2ee.enabled() && (encryptedChat() || (await e2ee.willEncrypt(convId)));
+        // Every message is end-to-end encrypted, the file before it's uploaded; nothing is
+        // ever sent unencrypted. A retry reuses the same ciphertext.
+        const encrypt = !current().e2eeOut;
+        if (encrypt) await e2ee.whenStarted();
+        if (encrypt && !e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be sent.');
         if (current().needsUpload) {
           // In memory normally; after an app restart it comes back from on-device storage.
           const file = pendingFiles.get(msg.clientId) || (await getStoredMedia(pendingKey(msg.clientId)));
@@ -682,7 +682,7 @@ export const useChat = create((set, get) => {
         }
         if (encrypt) {
           const out = await encryptOut(current());
-          if (!out && encryptedChat()) throw new Error('Couldn’t encrypt this message. Try again.');
+          if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
         }
 
         const sent = current();
@@ -753,7 +753,7 @@ export const useChat = create((set, get) => {
         for (const m of t.items) {
           if (!m.pending || m.status !== 'pending') continue;
           let item = m;
-          if (!m.e2eeOut && get().conversations[m.conversationId]?.e2ee) {
+          if (!m.e2eeOut) {
             if (m.needsUpload) continue; // the file must be encrypted first: sent by the app
             const out = await encryptOut(m, { offline: true }).catch(() => null);
             if (!out) continue; // sent by the app when it's open again
@@ -805,7 +805,7 @@ export const useChat = create((set, get) => {
           patchItem(msg.conversationId, msg.id, { e2ee: { ...msg.e2ee, ciphertext: out.ciphertext, epoch: out.epoch } });
           return;
         }
-        await emitAck('message:edit', { messageId: msg.id, text });
+        throw new Error('Messages sent before encryption can’t be edited');
       } catch (e) {
         patchItem(msg.conversationId, msg.id, { text: msg.text, editedAt: msg.editedAt });
         toast(e.message, 'error');

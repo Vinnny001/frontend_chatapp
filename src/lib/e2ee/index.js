@@ -14,6 +14,7 @@ import { forgetMediaKeys, registerMediaKey } from './files.js';
 import { MENTION_TOKEN } from '../mentions.js';
 import { api } from '../api.js';
 import { storage } from '../storage.js';
+import { LOW_SPACE_BYTES, formatBytes, freeSpace } from '../storageSpace.js';
 import { publishContacts, pullSync, startSync, stopSync } from './sync.js';
 
 // Set by the app: where synced contacts go, and this phone's own address-book matches.
@@ -76,6 +77,11 @@ export function start({ userId, deviceId }) {
   return promise;
 }
 
+/** Waits for encryption to finish starting on this device (if it is starting). */
+export async function whenStarted() {
+  if (starting) await starting.promise;
+}
+
 /** "Retry" after a failure. */
 export function retryStart({ userId, deviceId }) {
   starting = null;
@@ -85,10 +91,23 @@ export function retryStart({ userId, deviceId }) {
 async function startNow({ userId, deviceId }) {
   setStatus({ state: 'starting' });
   await stop();
+  // Too little room to keep keys and messages safely: stop here and say so (the app asks the
+  // user to free up space; nothing is sent unencrypted meanwhile).
+  const space = await freeSpace();
+  if (space && space.free < LOW_SPACE_BYTES) {
+    failed('space', `Only ${formatBytes(space.free)} of storage is free`);
+    starting = null;
+    return;
+  }
   let db;
   try {
     db = await openDb(dbName(userId, deviceId));
   } catch (err) {
+    if (err?.name === 'QuotaExceededError') {
+      failed('space', 'The device is out of storage');
+      starting = null;
+      return;
+    }
     // The browser's own failure (e.g. Chrome's "Internal error." on damaged files): unreadable
     // data is lost anyway, so start this device's database over once. Not when another tab holds it.
     if (err instanceof DOMException) {

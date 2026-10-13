@@ -25,6 +25,7 @@ import AdminPanel from './components/admin/AdminPanel.jsx';
 import JoinGroupDialog from './components/chat/JoinGroupDialog.jsx';
 import { ViewOnceViewer } from './components/chat/ViewOnce.jsx';
 import LoginRequestPrompt from './components/LoginRequestPrompt.jsx';
+import E2eeGate, { useE2eeStatus } from './components/E2eeGate.jsx';
 import { inviteCodeOf } from './lib/invites.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
@@ -114,8 +115,19 @@ function Messenger({ token }) {
   const activeId = useChat((s) => s.activeId);
   const infoOpen = useUI((s) => s.infoOpen);
   const lockedCall = useCall((s) => !!s.external?.locked);
+  const e2eeFailed = useE2eeStatus().state === 'error';
 
   if (lockedCall) return <LockedCall />;
+  // Messages are always end-to-end encrypted: no chats on a device where that can't work.
+  // (It can still approve a sign-in on another device.)
+  if (e2eeFailed) {
+    return (
+      <>
+        <E2eeGate />
+        <LoginRequestPrompt />
+      </>
+    );
+  }
 
   return (
     <div className={`app ${activeId ? 'has-chat' : ''} ${infoOpen && activeId ? 'has-info' : ''}`}>

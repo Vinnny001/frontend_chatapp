@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Archive, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
-import E2eeBanner from './E2eeBanner.jsx';
 import DevicesPanel from './DevicesPanel.jsx';
 import SidePanel from './SidePanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
@@ -101,7 +100,6 @@ export default function Sidebar() {
         </button>
       </header>
 
-      <E2eeBanner />
       <div className="sidebar-search">
         <Search size={17} className="search-icon" />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chats" aria-label="Search chats" />

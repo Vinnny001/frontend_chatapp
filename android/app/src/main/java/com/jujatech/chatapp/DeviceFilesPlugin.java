@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.StatFs;
 import android.provider.Settings;
 import android.util.Base64;
 
@@ -76,6 +77,28 @@ public class DeviceFilesPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Could not delete file", e);
         }
+    }
+
+    /** Free and total space where the app keeps its data (encryption keys, messages, media). */
+    @PluginMethod
+    public void space(PluginCall call) {
+        StatFs stat = new StatFs(getContext().getFilesDir().getAbsolutePath());
+        JSObject result = new JSObject();
+        result.put("free", stat.getAvailableBytes());
+        result.put("total", stat.getTotalBytes());
+        call.resolve(result);
+    }
+
+    /** The phone's storage settings (to free up space). */
+    @PluginMethod
+    public void openStorageSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getActivity().startActivity(intent);
+        } catch (ActivityNotFoundException e) {
+            getActivity().startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        }
+        call.resolve();
     }
 
     static final String APK_MIME = "application/vnd.android.package-archive";

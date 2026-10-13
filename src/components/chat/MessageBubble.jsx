@@ -469,7 +469,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             icon: pinned ? PinOff : Pin,
             onClick: () => chat.pinMessage(msg, !pinned),
           },
-          mine && msg.type === 'text' && age < EDIT_WINDOW_MS && (!msg.e2ee || msg.e2eeState === 'ok') && {
+          mine && msg.type === 'text' && age < EDIT_WINDOW_MS && msg.e2ee && msg.e2eeState === 'ok' && {
             label: 'Edit',
             icon: Pencil,
             onClick: () => chat.setComposer(conv.id, { editing: msg, replyTo: null }),
