@@ -365,7 +365,21 @@ async function ready(convId) {
 
 // ------------------------------------------------------------------ messages
 
-/** Encrypts once for every device in the chat. Null: the chat isn't encrypted. */
+/**
+ * Members with no device in the group right now (signed out everywhere, or not set up yet):
+ * a message encrypted now can't reach them, so it's sent again once they have a device.
+ */
+function membersWithoutDevice(convId, g) {
+  const users = rosters.get(convId)?.info.users;
+  if (!users) return [];
+  const present = new Set(leavesOf(g.state).map((l) => l.userId));
+  return users.filter((u) => !present.has(u));
+}
+
+/**
+ * Encrypts once for every device in the chat. Null: the chat isn't encrypted.
+ * `missing`: members it couldn't reach (no device in the group).
+ */
 export function encrypt(convId, payload, { offline = false } = {}) {
   return locked(async () => {
     const g = offline ? await loadGroup(convId) : await ready(convId);
@@ -373,7 +387,11 @@ export function encrypt(convId, payload, { offline = false } = {}) {
     const m = await M.createApplicationMessage(g.state, enc(JSON.stringify(payload)), ctx.impl);
     zero(m.consumed);
     await saveGroup(convId, { state: m.newState, meta: g.meta });
-    return { ciphertext: wire({ privateMessage: m.privateMessage, wireformat: 'mls_private_message' }), epoch: epochOf(g) };
+    return {
+      ciphertext: wire({ privateMessage: m.privateMessage, wireformat: 'mls_private_message' }),
+      epoch: epochOf(g),
+      missing: membersWithoutDevice(convId, g),
+    };
   });
 }
 

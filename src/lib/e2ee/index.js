@@ -112,6 +112,7 @@ async function startNow({ userId, deviceId }) {
   try {
     await mls.init({ userId, deviceId, db });
     setStatus({ state: 'ready' });
+    resendSoon(5000); // anything still waiting for someone's device
   } catch (err) {
     failed('keys', err);
     starting = null;
@@ -213,7 +214,7 @@ export function reveal(m) {
   if (!m?.e2ee?.ciphertext || m.deletedForEveryone) return m;
   const fp = fpOf(m.e2ee.ciphertext);
   const rec = (m.id && plain.get(m.id)) || (m.clientId && plain.get(`c:${m.clientId}`));
-  if (rec?.fp === fp && rec.state === 'ok') return apply(m, payloadOf(rec));
+  if (rec?.fp === fp && rec.state === 'ok') return { ...apply(m, payloadOf(rec)), e2eePending: !!rec.pendingFor?.length };
   if (rec?.fp === fp && !TRANSIENT.has(rec.state)) return { ...m, text: '', e2eeState: rec.state };
   enqueue(m);
   // An edit being decrypted keeps showing the previous version meanwhile.
@@ -301,9 +302,67 @@ export async function willEncrypt(convId) {
   return !!(await mls.prepare(convId));
 }
 
-/** Saves what I sent (by clientId now, by message id once the server confirms it). */
-export function rememberSent(key, payload, ciphertext, where = {}) {
-  remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where });
+/**
+ * Saves what I sent (by clientId now, by message id once the server confirms it). `missing`:
+ * members it couldn't reach yet (they had no device); it's sent again when they have one.
+ */
+export function rememberSent(key, payload, ciphertext, where = {}, missing = []) {
+  remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where, ...(missing.length && { pendingFor: missing }) });
+  if (missing.length) resendSoon();
+}
+
+const RESEND_WITHIN_MS = 30 * 24 * 3600 * 1000; // as long as the server accepts it
+let resendTimer = null;
+let resending = null;
+
+/** Devices changed somewhere (someone signed in): look at what's waiting for them shortly. */
+export function resendSoon(delayMs = 3000) {
+  clearTimeout(resendTimer);
+  resendTimer = setTimeout(() => resendPending().catch((err) => console.warn('[e2ee] resend failed', err)), delayMs);
+}
+
+/**
+ * My messages that couldn't reach someone (no device of theirs in the chat's group when sent):
+ * once they have a device, encrypt them again for the group as it is now and replace the copy
+ * on the server. Their new device reads the new copy; until then the message shows one tick.
+ */
+export function resendPending() {
+  resending ??= (async () => {
+    const due = [...plain.entries()].filter(
+      ([id, rec]) => !id.startsWith('c:') && rec.pendingFor?.length && rec.sender === session?.userId && Date.now() - Date.parse(rec.at) < RESEND_WITHIN_MS
+    );
+    const byChat = new Map();
+    for (const entry of due) byChat.set(entry[1].conv, [...(byChat.get(entry[1].conv) || []), entry]);
+    for (const [convId, list] of byChat) {
+      if (!session) return;
+      mls.forgetRosters(convId);
+      if (!(await mls.prepare(convId))) continue; // adds the devices that appeared
+      // Oldest first, so they arrive in order.
+      list.sort((a, b) => Date.parse(a[1].at) - Date.parse(b[1].at));
+      for (const [id, rec] of list) {
+        const out = await mls.encrypt(convId, rec.p);
+        if (!out || out.missing.length >= rec.pendingFor.length) continue; // nobody new can read it yet
+        try {
+          await api(`/api/mls/${convId}/messages/${id}/resend`, { method: 'POST', body: { ciphertext: out.ciphertext, epoch: out.epoch } });
+        } catch (err) {
+          if (![403, 404, 410].includes(err.status)) throw err;
+          out.missing = []; // gone, or not this device's to send: stop trying
+        }
+        const { pendingFor, ...rest } = rec;
+        remember(id, { ...rest, fp: fpOf(out.ciphertext), ...(out.missing.length && { pendingFor: out.missing }) });
+        const shown = { id, conversationId: convId, e2eePending: out.missing.length > 0, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch, device: session.deviceId } };
+        resendListeners.forEach((fn) => fn(shown));
+      }
+    }
+  })().finally(() => (resending = null));
+  return resending;
+}
+
+const resendListeners = new Set();
+/** A message of mine was sent again: { id, conversationId, e2ee, e2eePending }. */
+export function onResent(fn) {
+  resendListeners.add(fn);
+  return () => resendListeners.delete(fn);
 }
 
 /** What a message contained (for reply quotes and pins), or null. */

@@ -152,6 +152,8 @@ export const isOnlineSelector = (userId) => (s) => !!presenceSelector(userId)(s)
 export function messageStatus(msg, conv, me) {
   if (msg.pending) return msg.status === 'failed' ? 'failed' : 'pending';
   if (msg.sender !== me || !conv) return null;
+  // Encrypted while someone had no device: it hasn't reached them, whatever their receipts say.
+  if (msg.e2eePending) return 'sent';
   const others = conv.participants.filter((p) => p.id !== me);
   if (!others.length) return 'read'; // my own chat: nobody else to wait for
   const t = ts(msg.createdAt);
@@ -216,7 +218,7 @@ export const useChat = create((set, get) => {
       ...(m.viewOnce && media?.url && { viewOnceUrl: media.url }),
       ...(m.poll && { pollMeta: { count: m.poll.options.length, multiple: !!m.poll.multiple } }),
     };
-    e2ee.rememberSent(`c:${m.clientId}`, payload, out.ciphertext, { conv: m.conversationId, sender: meId(), at: m.createdAt });
+    e2ee.rememberSent(`c:${m.clientId}`, payload, out.ciphertext, { conv: m.conversationId, sender: meId(), at: m.createdAt }, out.missing);
     patchItem(m.conversationId, m.clientId, { e2eeOut });
     return e2eeOut;
   };
@@ -685,7 +687,7 @@ export const useChat = create((set, get) => {
 
         const sent = current();
         const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(sent) }, 20000);
-        if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.e2eeOut.payload, sent.e2eeOut.ciphertext, { conv: convId, sender: meId(), at: message.createdAt });
+        if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.e2eeOut.payload, sent.e2eeOut.ciphertext, { conv: convId, sender: meId(), at: message.createdAt }, sent.e2eeOut.missing);
         cancelBackground(msg.clientId);
         saveMessages([e2ee.reveal(message)]);
         addItems(convId, [message]);
@@ -784,6 +786,12 @@ export const useChat = create((set, get) => {
       if (m.e2eeState === 'ok' && m.media?.url && !m.viewOnce) keepOffline([m]);
     },
 
+    /** A message of mine was sent again to someone who had no device (now it can reach them). */
+    onResent({ id, conversationId, e2ee: copy, e2eePending }) {
+      patchItem(conversationId, id, { e2ee: copy, e2eePending });
+      patchStoredMessage({ id, conversationId, e2ee: copy });
+    },
+
     async editMessage(msg, text) {
       patchItem(msg.conversationId, msg.id, { text, editedAt: new Date().toISOString() });
       try {
@@ -792,7 +800,7 @@ export const useChat = create((set, get) => {
           const payload = { ...contentForEncryption(msg), text };
           const out = await e2ee.encryptMessage(msg.conversationId, payload);
           if (!out) throw new Error('Couldn’t encrypt the edit');
-          e2ee.rememberSent(msg.id, payload, out.ciphertext, { conv: msg.conversationId, sender: meId(), at: msg.createdAt });
+          e2ee.rememberSent(msg.id, payload, out.ciphertext, { conv: msg.conversationId, sender: meId(), at: msg.createdAt }, out.missing);
           await emitAck('message:edit', { messageId: msg.id, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch } });
           patchItem(msg.conversationId, msg.id, { e2ee: { ...msg.e2ee, ciphertext: out.ciphertext, epoch: out.epoch } });
           return;

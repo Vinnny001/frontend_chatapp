@@ -30,6 +30,7 @@ export function useRealtime(token) {
 
     // 0) End-to-end encryption: this device's keys (decrypted messages show as they're ready).
     cleanups.push(e2ee.onRevealed((m) => useChat.getState().onRevealed(m)));
+    cleanups.push(e2ee.onResent((m) => useChat.getState().onResent(m)));
     // My own devices share contacts and history over their encrypted channel.
     e2ee.setSyncHooks({
       onContacts: (deviceId, entries, at) => applySyncedContacts(userId, deviceId, entries, at),
@@ -155,7 +156,12 @@ export function useRealtime(token) {
       useGroupCall.getState().onUpdate(p);
     });
     socket.on('mls:welcome', () => e2ee.onWelcome().then(() => useChat.getState().refreshRevealed()));
-    socket.on('mls:roster', () => e2ee.forgetRosters());
+    // Someone's devices changed (e.g. signed in again): messages that couldn't reach them go again.
+    socket.on('mls:roster', () => {
+      e2ee.forgetRosters();
+      e2ee.resendSoon();
+    });
+    socket.on('mls:commit', () => e2ee.resendSoon());
     socket.on('mls:sync', () => e2ee.pullOwnDevices());
     socket.on('groupcall:key-request', onCallKeyRequest);
     socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed
