@@ -1,12 +1,32 @@
 import { create } from 'zustand';
 import { api, setApiToken, setUnauthorizedHandler } from '../lib/api.js';
 import { storage } from '../lib/storage.js';
+import { API_URL } from '../lib/config.js';
 import { unregisterPush } from '../lib/push.js';
 import { deviceInfo, tokenDeviceId } from '../lib/device.js';
 import { stop as stopE2ee } from '../lib/e2ee/index.js';
 
 const initialToken = storage.get('auth.token');
 setApiToken(initialToken);
+
+/**
+ * Ends a session on the server. Until the server confirms, its token is kept here and the sign-out
+ * is retried (on the next start and before the next sign-in): otherwise a failed request leaves the
+ * device "signed in" there, and it keeps being asked to approve new sign-ins.
+ */
+async function signOutOnServer(token) {
+  if (token) storage.set('auth.signOut', token);
+  const pending = storage.get('auth.signOut');
+  if (!pending) return;
+  try {
+    const res = await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${pending}` }, keepalive: true });
+    // 401: that session had already ended.
+    if (res.ok || res.status === 401) storage.set('auth.signOut', null);
+  } catch {
+    /* offline: retried later */
+  }
+}
+signOutOnServer();
 
 export const useAuth = create((set, get) => ({
   token: initialToken,
@@ -17,6 +37,7 @@ export const useAuth = create((set, get) => ({
   syncChoice: !!storage.get('auth.syncChoice'),
 
   async login(identifier, password) {
+    await signOutOnServer(); // a sign-out that didn't reach the server must not ask this device to approve itself
     const res = await api('/api/auth/login', { method: 'POST', body: { identifier, password, device: deviceInfo() } });
     if (res.approvalRequired) return set({ approval: { request: res.request, devices: res.devices, email: res.email } });
     get().setSession(res.token, res.user);
@@ -117,7 +138,7 @@ export const useAuth = create((set, get) => ({
   /** Signs out here; `server: false` when the server already ended this session (signed out remotely). */
   logout({ server = true } = {}) {
     unregisterPush(); // uses the current login token, so it must start before it's cleared
-    if (server && get().token) api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (server && get().token) signOutOnServer(get().token);
     // This device's encryption keys and decrypted messages go with the session.
     stopE2ee({ wipe: true }).catch(() => {});
     setApiToken(null);
