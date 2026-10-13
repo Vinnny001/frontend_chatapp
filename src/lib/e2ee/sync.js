@@ -8,6 +8,7 @@
 
 import * as mls from './mls.js';
 import { api } from '../api.js';
+import { seal, unseal } from './link.js';
 
 const HISTORY_DAYS = 90;
 const ANSWER_WITHIN_MS = 7 * 24 * 3600 * 1000;
@@ -26,8 +27,9 @@ export async function startSync({ deviceId, db, hooks }) {
   await mls.prepare(conversationId); // join (or create) my own devices' group
   await pullSync();
   if (!ctx) return;
-  // A device asks for history once, when it's new.
-  if (!(await db.get('kv', 'historyAsked')) && (await send({ kind: 'history-request', device: deviceId }))) {
+  // A device asks for history once, when it's new (naming the QR code it was linked with, if any).
+  const link = (await db.get('kv', 'linkKey'))?.requestId;
+  if (!(await db.get('kv', 'historyAsked')) && (await send({ kind: 'history-request', device: deviceId, ...(link && { link }) }))) {
     await db.put('kv', 'historyAsked', Date.now());
   }
   publishContacts(hooks.ownContacts?.());
@@ -76,20 +78,29 @@ async function handle(body, m) {
   if (body.kind === 'history-request' && body.device !== ctx.deviceId) {
     if (Date.now() - Date.parse(m.at) > ANSWER_WITHIN_MS) return;
     if (await ctx.db.get('kv', `answered:${body.device}`)) return;
-    await sendHistory(body.device);
+    // Linked by scanning its QR code here: seal the history to the key that code carried.
+    const sealTo = body.link ? await ctx.db.get('kv', `link:${body.link}`) : null;
+    await sendHistory(body.device, sealTo && { publicKey: sealTo, context: `${body.device}:${body.link}` });
     // and my contacts (it couldn't read what I shared before it joined)
     const last = await ctx.db.get('kv', 'contactsList');
     if (last) await send({ kind: 'contacts', entries: last }).catch(() => {});
     await ctx.db.put('kv', `answered:${body.device}`, Date.now());
   } else if (body.kind === 'history' && body.to === ctx.deviceId) {
-    ctx.hooks.importRecords(body.records || []);
+    if (body.sealed) {
+      const key = await ctx.db.get('kv', 'linkKey');
+      if (!key) return;
+      ctx.hooks.importRecords(await unseal(key.privateJwk, body.sealed, `${ctx.deviceId}:${key.requestId}`));
+    } else ctx.hooks.importRecords(body.records || []);
   } else if (body.kind === 'contacts') {
     ctx.hooks.onContacts(m.device, body.entries || [], m.at);
   }
 }
 
-/** What I've decrypted from the last 90 days, for a newly linked device of mine. */
-async function sendHistory(to) {
+/**
+ * What I've decrypted from the last 90 days, for a newly linked device of mine. `sealTo`
+ * ({ publicKey, context }): it was linked by QR code, so only that device can open it.
+ */
+async function sendHistory(to, sealTo) {
   const since = Date.now() - HISTORY_DAYS * 24 * 3600 * 1000;
   const records = ctx.hooks
     .records()
@@ -109,8 +120,11 @@ async function sendHistory(to) {
     size += n;
   }
   if (current.length) parts.push(current);
-  for (let i = 0; i < parts.length; i++) await send({ kind: 'history', to, part: i + 1, parts: parts.length, records: parts[i] });
-  if (!parts.length) await send({ kind: 'history', to, part: 1, parts: 1, records: [] });
+  if (!parts.length) parts.push([]);
+  for (let i = 0; i < parts.length; i++) {
+    const content = sealTo ? { sealed: await seal(sealTo.publicKey, parts[i], sealTo.context) } : { records: parts[i] };
+    await send({ kind: 'history', to, part: i + 1, parts: parts.length, ...content });
+  }
 }
 
 /** Shares this phone's address-book matches with my other devices (only when they changed). */

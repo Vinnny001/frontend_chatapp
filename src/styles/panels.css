@@ -1856,6 +1856,14 @@ button.composer-locked.blocked {
 .approval-icon.muted {
   color: var(--text-3);
 }
+.approval-qr {
+  width: 200px;
+  height: 200px;
+  padding: 8px;
+  background: #fff; /* scanners need a light quiet zone, in dark mode too */
+  border-radius: 12px;
+  margin: 4px 0;
+}
 .approval-number {
   font-size: 56px;
   font-weight: 700;
@@ -1899,6 +1907,32 @@ button.composer-locked.blocked {
 }
 .login-request-icon {
   color: var(--accent);
+}
+.login-request-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.qr-scanner {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-scanner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.qr-scanner .form-error {
+  padding: 16px;
+  color: #fff;
 }
 .login-request-choices {
   display: flex;

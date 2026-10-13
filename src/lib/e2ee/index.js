@@ -13,6 +13,7 @@ import { dbName, deleteDb, openDb } from './db.js';
 import { forgetMediaKeys, registerMediaKey } from './files.js';
 import { MENTION_TOKEN } from '../mentions.js';
 import { api } from '../api.js';
+import { storage } from '../storage.js';
 import { publishContacts, pullSync, startSync, stopSync } from './sync.js';
 
 // Set by the app: where synced contacts go, and this phone's own address-book matches.
@@ -104,6 +105,12 @@ async function startNow({ userId, deviceId }) {
     }
   }
   session = { userId, deviceId, db };
+  // Linked by QR code: the one-time key it showed opens the history sealed to it.
+  const link = storage.get('e2ee.link');
+  if (link) {
+    if (!(await db.get('kv', 'historyAsked'))) await db.put('kv', 'linkKey', link);
+    storage.set('e2ee.link', null);
+  }
   for (const [id, rec] of await db.entries('plain')) {
     plain.set(id, rec);
     const p = payloadOf(rec);
@@ -153,6 +160,11 @@ function importHistory(records) {
 }
 
 export const pullOwnDevices = () => pullSync();
+
+/** I approved a sign-in by scanning its QR code: its history goes sealed to the key in that code. */
+export async function rememberLink(requestId, publicKey) {
+  await session?.db.put('kv', `link:${requestId}`, publicKey);
+}
 export const shareContacts = (entries) => publishContacts(entries);
 
 /** Signed out: forget everything this device knew (its keys are worthless now anyway). */

@@ -4,7 +4,7 @@ import { useAuth } from '../store/auth.js';
 
 /**
  * A new device waiting to be let in: approve it on a device that's already signed in (by
- * tapping the number shown here), or use a code sent to the account's email.
+ * scanning the QR code or tapping the number shown here), or use a code sent to the account's email.
  */
 export default function ApprovalScreen() {
   const approval = useAuth((s) => s.approval);
@@ -15,6 +15,19 @@ export default function ApprovalScreen() {
   const [sentTo, setSentTo] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [qr, setQr] = useState(null);
+
+  useEffect(() => {
+    if (!approval?.linkQr) return undefined;
+    let live = true;
+    import('qrcode')
+      .then((QR) => QR.toDataURL(approval.linkQr, { width: 400, margin: 1, errorCorrectionLevel: 'M' }))
+      .then((url) => live && setQr(url))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [approval?.linkQr]);
 
   // Check every 2 seconds until it's answered.
   useEffect(() => {
@@ -89,8 +102,10 @@ export default function ApprovalScreen() {
           <Smartphone size={44} className="approval-icon" />
           <h2>Approve on your other device</h2>
           <p>
-            Open ChatApp on <strong>{others}</strong> and allow this sign-in. When asked, tap this number:
+            Open ChatApp on <strong>{others}</strong> and allow this sign-in.{' '}
+            {qr ? 'Scan this code with it, or tap the number below:' : 'When asked, tap this number:'}
           </p>
+          {qr && <img className="approval-qr" src={qr} alt="QR code to scan with your other device" width={200} height={200} />}
           <div className="approval-number" aria-label={`Number ${approval.request.match}`}>
             {approval.request.match}
           </div>

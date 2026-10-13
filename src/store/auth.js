@@ -5,6 +5,7 @@ import { API_URL } from '../lib/config.js';
 import { unregisterPush } from '../lib/push.js';
 import { deviceInfo, tokenDeviceId } from '../lib/device.js';
 import { stop as stopE2ee } from '../lib/e2ee/index.js';
+import { canLink, linkCode, newLinkKey } from '../lib/e2ee/link.js';
 
 const initialToken = storage.get('auth.token');
 setApiToken(initialToken);
@@ -39,7 +40,19 @@ export const useAuth = create((set, get) => ({
   async login(identifier, password) {
     await signOutOnServer(); // a sign-out that didn't reach the server must not ask this device to approve itself
     const res = await api('/api/auth/login', { method: 'POST', body: { identifier, password, device: deviceInfo() } });
-    if (res.approvalRequired) return set({ approval: { request: res.request, devices: res.devices, email: res.email } });
+    if (res.approvalRequired) {
+      // A QR code to scan on the other device: approves this sign-in and carries a one-time key
+      // that the history it sends here is sealed to.
+      let linkQr = null;
+      if (canLink()) {
+        const key = await newLinkKey().catch(() => null);
+        if (key) {
+          storage.set('e2ee.link', { requestId: res.request.id, privateJwk: key.privateJwk });
+          linkQr = linkCode(res.request.id, res.request.match, key.publicKey);
+        }
+      }
+      return set({ approval: { request: res.request, devices: res.devices, email: res.email, linkQr } });
+    }
     get().setSession(res.token, res.user);
   },
 
@@ -73,6 +86,7 @@ export const useAuth = create((set, get) => ({
   cancelApproval() {
     const a = get().approval;
     set({ approval: null });
+    storage.set('e2ee.link', null);
     if (a) api(`/api/auth/login-requests/${a.request.id}`, { method: 'DELETE', body: { secret: a.request.secret } }).catch(() => {});
   },
 
