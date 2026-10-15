@@ -7,10 +7,6 @@ import android.os.Bundle;
 
 import androidx.core.app.RemoteInput;
 
-import org.json.JSONObject;
-
-import java.util.UUID;
-
 /**
  * Notification buttons that work without opening ChatApp: Reply, Mark as read, Decline (call),
  * and the notification being swiped away.
@@ -63,27 +59,12 @@ public class NotificationActionReceiver extends BroadcastReceiver {
         }).start();
     }
 
+    /** Every message is end-to-end encrypted: the reply is encrypted on this phone, then sent. */
     private static void sendReply(Context context, String conversationId, String text) {
-        String token = Session.token(context);
-        if (token == null || conversationId == null) return;
-        String url = Session.apiUrl(context) + "/api/conversations/" + conversationId + "/messages";
-        String clientId = "n" + UUID.randomUUID().toString().replace("-", "");
-        try {
-            String body = new JSONObject().put("clientId", clientId).put("text", text).toString();
-            try {
-                Session.postJson(url, token, body);
-            } catch (Session.HttpStatus e) {
-                // 409: the chat became end-to-end encrypted; only the app can send there.
-                if (e.code == 409) Notifier.appendOwnReply(context, conversationId, "Not sent: open ChatApp to reply in this encrypted chat");
-                return; // signed out or no longer in the chat: nothing to retry
-            } catch (Exception e) {
-                // Offline: the background sender delivers it once the phone is back online.
-                OutboxPlugin.schedule(context, clientId, new JSONObject().put("url", url).put("token", token).put("body", body));
-            }
-            Notifier.appendOwnReply(context, conversationId, text);
-        } catch (Exception ignored) {
-            // could not build the request
-        }
+        if (Session.token(context) == null || conversationId == null) return;
+        // (goAsync allows about 10 seconds.)
+        String error = BackgroundCrypto.reply(context, conversationId, text, 9_000);
+        Notifier.appendOwnReply(context, conversationId, error == null ? text : "Not sent: open ChatApp to send “" + text + "”");
     }
 
     private static void markRead(Context context, String conversationId) {

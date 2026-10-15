@@ -332,7 +332,7 @@ async function ready(convId) {
       const started = await startGroup(convId);
       if (!started) continue;
       const g = await reconcile(convId, started, info);
-      if (g) return g;
+      if (g) return { ...g, roster: info };
       continue;
     }
     let g = await loadGroup(convId);
@@ -356,7 +356,8 @@ async function ready(convId) {
       }
     }
     const done = await reconcile(convId, g, info);
-    if (done) return done;
+    // (with the roster it was checked against: who should be able to read the chat)
+    if (done) return { ...done, roster: info };
   }
   throw new Error('Encryption is still being set up for this chat. Try again in a moment.');
 }
@@ -365,11 +366,13 @@ async function ready(convId) {
 
 /**
  * Members with no device in the group right now (signed out everywhere, or not set up yet):
- * a message encrypted now can't reach them, so it's sent again once they have a device.
+ * a message encrypted now can't reach them, so it's sent again once they have a device. Uses
+ * the roster the group was just checked against (the shared cache can be cleared meanwhile by
+ * a "devices changed" event). Null when unknown (encrypted offline).
  */
-function membersWithoutDevice(convId, g) {
-  const users = rosters.get(convId)?.info.users;
-  if (!users) return [];
+function membersWithoutDevice(g) {
+  const users = g.roster?.users;
+  if (!users) return null;
   const present = new Set(leavesOf(g.state).map((l) => l.userId));
   return users.filter((u) => !present.has(u));
 }
@@ -388,7 +391,7 @@ export function encrypt(convId, payload, { offline = false } = {}) {
     return {
       ciphertext: wire({ privateMessage: m.privateMessage, wireformat: 'mls_private_message' }),
       epoch: epochOf(g),
-      missing: membersWithoutDevice(convId, g),
+      missing: membersWithoutDevice(g),
     };
   });
 }
@@ -397,8 +400,16 @@ export function encrypt(convId, payload, { offline = false } = {}) {
  * Decrypts a message: { state: 'ok', payload } | 'waiting' (not in the group yet) | 'before'
  * (sent before this device joined) | 'failed'.
  */
-export function decrypt(convId, e2ee) {
+export function decrypt(convId, e2ee, { id } = {}) {
   return locked(async () => {
+    // Another copy of the app on this device (the background one that fills in notifications,
+    // or another tab) may have read it already: its keys are gone then, so use what it saved.
+    if (id) {
+      const rec = await ctx.db.get('plain', id);
+      if (rec?.state === 'ok' && rec.fp === e2ee.ciphertext.slice(-32)) {
+        return { state: 'ok', payload: rec.p || { type: 'text', text: rec.text } };
+      }
+    }
     let g = await loadGroup(convId);
     if (!g && (await processWelcomes())) g = await loadGroup(convId);
     if (!g) return { state: 'waiting' };

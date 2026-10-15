@@ -28,12 +28,14 @@ let session = null; // { userId, deviceId, db }
 const plain = new Map();
 const queue = new Map();
 const waiting = new Map(); // id -> [resolve] (revealNow)
-const lastTry = new Map(); // id -> time of the last attempt that may succeed later
+const lastTry = new Map(); // id -> { at, fp }: the last attempt (of that copy) that may succeed later
 const listeners = new Set();
 let draining = false;
 
 const RETRY_AFTER_MS = 15_000;
-const TRANSIENT = new Set(['waiting', 'retry']); // may work later: never saved
+// May work later: never saved, tried again. ('own': sent from this device but its copy isn't
+// here yet, e.g. a notification reply the background copy of the app is still saving.)
+const TRANSIENT = new Set(['waiting', 'retry', 'own']);
 
 /** A short fingerprint of a ciphertext: an edit brings a new ciphertext (and a new decryption). */
 const fpOf = (ciphertext) => ciphertext.slice(-32);
@@ -62,14 +64,14 @@ function failed(stage, err) {
   api('/api/mls/diagnostic', { method: 'POST', body: { stage, message, browser: navigator.userAgent.slice(0, 300) } }).catch(() => {});
 }
 
-export function start({ userId, deviceId }) {
+export function start({ userId, deviceId, background = false }) {
   if (!deviceId) return Promise.resolve();
   if (!window.indexedDB) {
     failed('storage', 'This browser has no IndexedDB storage (private mode or storage switched off)');
     return Promise.resolve();
   }
   if (starting?.deviceId === deviceId) return starting.promise;
-  const promise = startNow({ userId, deviceId }).catch((err) => {
+  const promise = startNow({ userId, deviceId, background }).catch((err) => {
     failed('start', err);
     starting = null; // a later retry starts again (a failure is never kept)
   });
@@ -88,7 +90,7 @@ export function retryStart({ userId, deviceId }) {
   return start({ userId, deviceId });
 }
 
-async function startNow({ userId, deviceId }) {
+async function startNow({ userId, deviceId, background }) {
   setStatus({ state: 'starting' });
   await stop();
   // Too little room to keep keys and messages safely: stop here and say so (the app asks the
@@ -138,7 +140,8 @@ async function startNow({ userId, deviceId }) {
   try {
     await mls.init({ userId, deviceId, db });
     setStatus({ state: 'ready' });
-    resendSoon(5000); // anything still waiting for someone's device
+    // anything still waiting for someone's device (not in the short-lived background copy)
+    if (!background) resendSoon(5000);
   } catch (err) {
     failed('keys', err);
     starting = null;
@@ -264,9 +267,11 @@ export function revealNow(m, timeoutMs = 8000) {
 }
 
 function enqueue(m) {
-  if (!session || !m.id || queue.has(m.id)) return;
-  const at = lastTry.get(m.id);
-  if (at && Date.now() - at < RETRY_AFTER_MS) return;
+  // (A different copy of a queued message, an edit or a re-send, replaces it.)
+  if (!session || !m.id || queue.get(m.id)?.e2ee?.ciphertext === m.e2ee.ciphertext) return;
+  // Not again too soon, unless it's a new copy (an edit or a re-send).
+  const last = lastTry.get(m.id);
+  if (last && last.fp === fpOf(m.e2ee.ciphertext) && Date.now() - last.at < RETRY_AFTER_MS) return;
   queue.set(m.id, m);
   drainSoon();
 }
@@ -287,12 +292,20 @@ async function drain() {
         if (!session) return;
         const fp = fpOf(m.e2ee.ciphertext);
         let res;
-        if (m.e2ee.device === session.deviceId) res = { state: 'own' }; // sent from here, but the saved copy is gone
+        // Saved by another copy of the app on this device (the background one that answers
+        // notifications, or another tab): sent or decrypted there.
+        const savedAs = async (key) => {
+          const r = key ? await session.db.get('plain', key).catch(() => null) : null;
+          return r?.state === 'ok' && r.fp === fp ? r : null;
+        };
+        const saved = (await savedAs(m.id)) || (await savedAs(m.clientId && `c:${m.clientId}`));
+        if (saved) res = { state: 'ok', payload: payloadOf(saved) };
+        else if (m.e2ee.device === session.deviceId) res = { state: 'own' }; // sent from here, but the saved copy is gone
         else if (!mls.active()) res = { state: 'waiting' };
-        else res = await mls.decrypt(m.conversationId, m.e2ee).catch((e) => ({ state: e?.status === 0 ? 'retry' : 'failed', error: e?.message }));
+        else res = await mls.decrypt(m.conversationId, m.e2ee, { id: m.id }).catch((e) => ({ state: e?.status === 0 ? 'retry' : 'failed', error: e?.message }));
         const where = { conv: m.conversationId, sender: m.sender, at: m.createdAt };
         const rec = res.state === 'ok' ? { p: res.payload || {}, fp, state: 'ok', ...where } : { fp, state: res.state, ...where };
-        if (TRANSIENT.has(rec.state)) lastTry.set(m.id, Date.now());
+        if (TRANSIENT.has(rec.state)) lastTry.set(m.id, { at: Date.now(), fp });
         else lastTry.delete(m.id);
         if (rec.state !== 'ok' && plain.get(m.id)?.state === 'ok') {
           // A newer version (edit) couldn't be read: keep showing what we have.
@@ -338,8 +351,9 @@ export async function willEncrypt(convId) {
  * members it couldn't reach yet (they had no device); it's sent again when they have one.
  */
 export function rememberSent(key, payload, ciphertext, where = {}, missing = []) {
-  remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where, ...(missing.length && { pendingFor: missing }) });
-  if (missing.length) resendSoon();
+  const pendingFor = missing || []; // (unknown when encrypted offline)
+  remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where, ...(pendingFor.length && { pendingFor }) });
+  if (pendingFor.length) resendSoon();
 }
 
 const RESEND_WITHIN_MS = 30 * 24 * 3600 * 1000; // as long as the server accepts it
@@ -372,7 +386,8 @@ export function resendPending() {
       list.sort((a, b) => Date.parse(a[1].at) - Date.parse(b[1].at));
       for (const [id, rec] of list) {
         const out = await mls.encrypt(convId, rec.p);
-        if (!out || out.missing.length >= rec.pendingFor.length) continue; // nobody new can read it yet
+        // Nobody new can read it yet (or that can't be told): keep waiting.
+        if (!out?.missing || out.missing.length >= rec.pendingFor.length) continue;
         try {
           await api(`/api/mls/${convId}/messages/${id}/resend`, { method: 'POST', body: { ciphertext: out.ciphertext, epoch: out.epoch } });
         } catch (err) {

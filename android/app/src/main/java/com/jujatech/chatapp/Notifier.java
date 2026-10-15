@@ -241,12 +241,19 @@ final class Notifier {
             for (int i = 0; i < messages.length(); i++) {
                 if (messages.getJSONObject(i).optString("id").equals(messageId)) return; // repeated push
             }
+            // End-to-end encrypted: decrypted on this phone (as on WhatsApp) to show the real text;
+            // "🔒 New message" only if that isn't possible in time.
+            String text = d.get("text");
+            if ("1".equals(d.get("e2ee"))) {
+                String plain = BackgroundCrypto.decrypt(context, conversationId, messageId, d.get("message"), 9_000);
+                if (plain != null && !plain.isEmpty()) text = plain;
+            }
             messages.put(new JSONObject()
                 .put("id", messageId)
                 .put("senderId", d.get("senderId"))
                 .put("name", Session.nameFor(context, d.get("senderId"), d.get("senderName")))
                 .put("avatar", d.get("senderAvatar"))
-                .put("text", d.get("text"))
+                .put("text", text)
                 .put("at", parseLong(d.get("sentAt"), System.currentTimeMillis())));
             saveChat(context, conversationId, chat);
             postChat(context, conversationId, chat, false);
@@ -445,10 +452,14 @@ final class Notifier {
     }
 
     private static NotificationCompat.Action replyAction(Context context, String conversationId, boolean encrypted) {
-        // Every message is end-to-end encrypted and only the app can encrypt, so Reply opens
-        // the chat in ChatApp (an inline reply from the notification couldn't be encrypted).
-        return new NotificationCompat.Action.Builder(0, "Reply", activity(context, "open", conversationId, null, null))
-            .setShowsUserInterface(true)
+        // Typed right in the notification; encrypted on this phone and sent (BackgroundCrypto).
+        RemoteInput input = new RemoteInput.Builder(REPLY_KEY).setLabel("Reply").build();
+        return new NotificationCompat.Action.Builder(0, "Reply",
+                broadcast(context, NotificationActionReceiver.REPLY, conversationId, null, true))
+            .addRemoteInput(input)
+            .setAllowGeneratedReplies(true)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
             .build();
     }
 

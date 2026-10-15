@@ -37,6 +37,8 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // Background sending of messages queued while offline (OutboxPlugin)
     implementation "androidx.work:work-runtime:2.10.5"
+    // Hidden WebView serving the app's files for notification encryption (BackgroundCrypto).
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     // WhatsApp-style notifications built from data pushes (ChatMessagingService)
     implementation "com.google.firebase:firebase-messaging:25.0.1"
     implementation project(':capacitor-android')
