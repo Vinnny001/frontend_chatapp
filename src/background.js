@@ -60,9 +60,13 @@ window.__bg = {
       const m = await messageFor(conversationId, messageId, pushedJson ? JSON.parse(pushedJson) : null);
       if (!m?.e2ee) return answer(id, { ok: false, error: 'not found' });
       const shown = await e2ee.revealNow(m, 10_000);
-      if (shown.e2eeState !== 'ok') return answer(id, { ok: false, error: shown.e2eeState });
+      if (shown.e2eeState !== 'ok') {
+        console.warn('[bg] could not decrypt', messageId, shown.e2eeState);
+        return answer(id, { ok: false, error: shown.e2eeState });
+      }
       answer(id, { ok: true, text: preview(shown) });
     } catch (err) {
+      console.warn('[bg] decrypt failed', err?.message || err);
       answer(id, { ok: false, error: String(err?.message || err) });
     }
   },

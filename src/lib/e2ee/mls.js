@@ -17,7 +17,15 @@ const SUITE = 'MLS_128_DHKEMP256_AES128GCM_SHA256_P256';
 const KEY_PACKAGE_TARGET = 40; // published for others to add this device while it's offline
 const KEY_PACKAGE_REFILL = 15;
 const UPDATE_EVERY_MS = 24 * 3600 * 1000; // fresh own keys at least once a day per chat
-const ROSTER_TTL_MS = 30_000;
+// The chat's devices and current epoch, kept between messages: the server says when they change
+// (devices: "mls:roster"; epoch: "mls:commit", see noteEpoch), so sending needs no round trip.
+const ROSTER_TTL_MS = 10 * 60_000;
+// How much a device that was away can still read. It reads missed messages in order (each with
+// the keys of its own epoch, see decryptMany), so these are only a safety net for messages that
+// arrive out of order: keys of the last 32 key changes, up to 1000 skipped messages per sender,
+// and jumping at most 5000 messages ahead. (Library defaults: 4, 10 and 200.)
+const KEY_RETENTION = { retainKeysForEpochs: 32, retainKeysForGenerations: 1000, maximumForwardRatchetSteps: 5000 };
+const LAST_RESORT = 'lr-'; // KeyPackage ids: the reusable one, for when the one-time ones run out
 
 let M; // ts-mls
 let ctx = null; // { userId, deviceId, db, impl, identity, config }
@@ -38,24 +46,33 @@ const epochOf = (g) => Number(g.state.groupContext.epoch);
 const zero = (list) => list?.forEach((b) => M.zeroOutUint8Array(b));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// One MLS operation at a time (and across browser tabs of this device), always on the latest
-// saved state: two operations on the same group state would fork it.
-let chain = Promise.resolve();
-export function locked(fn) {
-  const run = () => (navigator.locks ? navigator.locks.request(`chatapp-mls-${ctx.deviceId}`, () => fn()) : fn());
-  const p = chain.then(run, run);
-  chain = p.catch(() => {});
+// One MLS operation at a time per chat (and across the app's copies on this device: tabs, the
+// background one for notifications), always on the latest saved state: two operations on the
+// same group state would fork it. Per chat, so a slow one (setting a chat up over the network)
+// never holds up reading messages in another. `scope`: a chat id, or 'kps' (this device's
+// KeyPackages).
+const chains = new Map();
+const lockedChat = (convId, fn) => locked(fn, convId);
+export function locked(fn, scope) {
+  const name = `chatapp-mls-${ctx.deviceId}-${scope}`;
+  const run = () => (navigator.locks ? navigator.locks.request(name, () => fn()) : fn());
+  const p = (chains.get(scope) || Promise.resolve()).then(run, run);
+  chains.set(scope, p.catch(() => {}));
   return p;
 }
 
 // ------------------------------------------------------------------ setup
 
-export async function init({ userId, deviceId, db }) {
+export async function init({ userId, deviceId, db, background = false }) {
   M ??= await import('ts-mls');
   const { defaultClientConfig } = await import('ts-mls/clientConfig.js');
   const impl = await M.getCiphersuiteImpl(M.getCiphersuiteFromName(SUITE), M.nobleCryptoProvider);
-  ctx = { userId, deviceId, db, impl, identity: null };
-  ctx.config = { ...defaultClientConfig, authService: { validateCredential: (cred, key) => checkCredential(cred, key) } };
+  ctx = { userId, deviceId, db, impl, identity: null, background };
+  ctx.config = {
+    ...defaultClientConfig,
+    keyRetentionConfig: KEY_RETENTION,
+    authService: { validateCredential: (cred, key) => checkCredential(cred, key) },
+  };
 
   let identity = await db.get('kv', 'identity');
   if (!identity) {
@@ -68,10 +85,14 @@ export async function init({ userId, deviceId, db }) {
     await api('/api/mls/identity', { method: 'POST', body: { key: b64(identity.publicKey) } });
     await db.put('kv', 'registered', true);
   }
-  await locked(async () => {
-    await topUpKeyPackages();
-    await processWelcomes();
-  });
+  // Housekeeping in the background: reading messages never waits for it (a chat this device
+  // was added to is joined when its first message is read, see decryptMany). The short-lived
+  // background copy of the app (notifications) leaves it to the app.
+  if (!background) {
+    locked(() => topUpKeyPackages(), 'kps')
+      .then(() => processWelcomes())
+      .catch((err) => console.warn('[e2ee] key upkeep failed', err));
+  }
 }
 
 export function stop() {
@@ -95,18 +116,27 @@ async function newKeyPackage() {
   return { pub: kp.publicPackage, priv: kp.privatePackage };
 }
 
-/** Keeps enough one-time KeyPackages on the server for others to add this device offline. */
+/**
+ * Keeps enough one-time KeyPackages on the server for others to add this device offline, plus
+ * one "last resort" KeyPackage that can be used again (RFC 9420), so a device that stays away
+ * long enough to run out can still be added to new chats.
+ */
 async function topUpKeyPackages() {
-  const { count } = await api('/api/mls/key-packages/count');
-  if (count >= KEY_PACKAGE_REFILL) return;
+  const { count, lastResort } = await api('/api/mls/key-packages/count');
   const packages = [];
-  for (let i = count; i < KEY_PACKAGE_TARGET; i++) {
+  if (!lastResort) {
+    const kp = await newKeyPackage();
+    const id = LAST_RESORT + hex(crypto.getRandomValues(new Uint8Array(14)));
+    await ctx.db.put('kps', id, kp);
+    packages.push({ id, data: wire({ keyPackage: kp.pub, wireformat: 'mls_key_package' }), lastResort: true });
+  }
+  for (let i = count < KEY_PACKAGE_REFILL ? count : KEY_PACKAGE_TARGET; i < KEY_PACKAGE_TARGET; i++) {
     const kp = await newKeyPackage();
     const id = hex(crypto.getRandomValues(new Uint8Array(16)));
     await ctx.db.put('kps', id, kp);
     packages.push({ id, data: wire({ keyPackage: kp.pub, wireformat: 'mls_key_package' }) });
   }
-  await api('/api/mls/key-packages', { method: 'POST', body: { packages } });
+  if (packages.length) await api('/api/mls/key-packages', { method: 'POST', body: { packages } });
 }
 
 // ------------------------------------------------------------------ identities
@@ -171,17 +201,33 @@ async function rosterInfo(convId, { fresh = false } = {}) {
   return info;
 }
 
+/** Another device changed the chat's keys (to `epoch`): catch up before the next message. */
+export function noteEpoch(convId, epoch) {
+  const hit = rosters.get(convId);
+  if (hit && hit.info.epoch < epoch) hit.info = { ...hit.info, epoch };
+}
+
 export function forgetRosters(convId) {
   if (convId) rosters.delete(convId);
   else rosters.clear();
 }
 
-/** Applies the key changes this device missed (in order). Null if we were removed. */
-async function catchUp(convId, g) {
+/**
+ * Applies the key changes this device missed (in order), all of them or up to epoch `upTo`
+ * (to read a message with the keys it was sent with). Null if we were removed.
+ */
+async function catchUp(convId, g, { upTo = Infinity, known = null } = {}) {
   for (;;) {
-    const { commits } = await api(`/api/mls/${convId}/commits?from=${epochOf(g)}`);
+    if (epochOf(g) >= upTo) return g;
+    // `known`: key changes fetched earlier in the same go (fetched once, not once per epoch).
+    let commits = known?.filter((c) => c.epoch >= epochOf(g)) || [];
+    if (!commits.length) {
+      ({ commits } = await api(`/api/mls/${convId}/commits?from=${epochOf(g)}`));
+      known?.push(...commits);
+    }
     let applied = 0;
     for (const c of commits) {
+      if (epochOf(g) >= upTo) break;
       if (c.epoch !== epochOf(g)) continue;
       if (c.device === ctx.deviceId) {
         // Our own change was accepted but never saved here (the app closed in between):
@@ -199,14 +245,28 @@ async function catchUp(convId, g) {
       }
     }
     if (applied) await saveGroup(convId, g);
-    if (commits.length < 200) return g;
+    if (!applied || epochOf(g) >= upTo) return g; // (nothing more there yet, or far enough)
   }
 }
 
-/** Joins the chats this device was added to while it was away. */
-async function processWelcomes() {
+/**
+ * Joins the chats this device was added to while it was away. `only`: just that chat (called
+ * while holding its lock); otherwise each chat's join takes that chat's lock.
+ */
+async function processWelcomes({ only } = {}) {
   const { welcomes } = await api('/api/mls/welcomes/mine');
-  for (const w of welcomes) {
+  const mine = welcomes.filter((w) => !only || w.conversationId === only);
+  for (const w of mine) {
+    if (only) await useWelcome(w);
+    else await locked(() => useWelcome(w), w.conversationId);
+  }
+  // Used KeyPackages are replaced in the background (not by the notifications' copy of the app).
+  if (mine.length && !ctx.background) locked(() => topUpKeyPackages(), 'kps').catch(() => {});
+  return mine.length;
+}
+
+async function useWelcome(w) {
+  {
     try {
       const kp = await ctx.db.get('kps', w.keyId);
       const existing = await ctx.db.get('groups', w.conversationId);
@@ -215,14 +275,12 @@ async function processWelcomes() {
         const state = await M.joinGroup(unwire(w.data).welcome, kp.pub, kp.priv, M.emptyPskIndex, ctx.impl, undefined, undefined, ctx.config);
         await saveGroup(w.conversationId, { state, meta: { joinedEpoch: w.epoch, updatedAt: Date.now() } });
       }
-      if (kp) await ctx.db.del('kps', w.keyId);
+      if (kp && !w.keyId.startsWith(LAST_RESORT)) await ctx.db.del('kps', w.keyId); // (the last resort one is kept)
     } catch (err) {
       console.warn('[e2ee] could not use a welcome', err);
     }
-    await api(`/api/mls/welcomes/${w.id}`, { method: 'DELETE' }).catch(() => {});
+    api(`/api/mls/welcomes/${w.id}`, { method: 'DELETE' }).catch(() => {}); // (not waited for)
   }
-  if (welcomes.length) await topUpKeyPackages().catch(() => {});
-  return welcomes.length;
 }
 
 /** Sends a key change; 409 means the group moved on first (the caller catches up and retries). */
@@ -271,6 +329,16 @@ async function externalJoin(convId, groupInfoB64) {
  * Makes the group match who should read the chat: adds devices that are missing, removes
  * signed-out devices and people who left, and refreshes this device's own keys once a day.
  */
+/** The group already matches the chat's devices, and this device's keys are fresh enough. */
+function inStep(g, info) {
+  const wanted = new Set(info.devices.map((d) => d.deviceId));
+  const leaves = leavesOf(g.state);
+  const present = new Set(leaves.map((l) => l.deviceId));
+  if ([...wanted].some((id) => !present.has(id) && id !== ctx.deviceId)) return false;
+  if (leaves.some((l) => !wanted.has(l.deviceId) && l.deviceId !== ctx.deviceId)) return false;
+  return Date.now() - (g.meta.updatedAt || 0) <= UPDATE_EVERY_MS;
+}
+
 async function reconcile(convId, g, info) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const wanted = new Map(info.devices.map((d) => [d.deviceId, d]));
@@ -326,6 +394,11 @@ async function reconcile(convId, g, info) {
 async function ready(convId) {
   for (let tries = 0; tries < 8; tries++) {
     const info = await rosterInfo(convId, { fresh: tries > 0 });
+    // Usual case: nothing changed since the last message, so no network at all.
+    if (tries === 0 && info.enabled) {
+      const g = await loadGroup(convId);
+      if (g && epochOf(g) >= info.epoch && inStep(g, info)) return { ...g, roster: info };
+    }
     if (!info.enabled) {
       // Encryption is required: start now with the devices there are (members without one
       // get the messages sent again when they have one).
@@ -336,7 +409,7 @@ async function ready(convId) {
       continue;
     }
     let g = await loadGroup(convId);
-    if (!g && (await processWelcomes())) g = await loadGroup(convId);
+    if (!g && (await processWelcomes({ only: convId }))) g = await loadGroup(convId);
     if (g) g = await catchUp(convId, g);
     if (g && epochOf(g) < info.epoch) {
       // Away so long that the key changes it missed have expired: start again by rejoining.
@@ -381,8 +454,10 @@ function membersWithoutDevice(g) {
  * Encrypts once for every device in the chat. Null: the chat isn't encrypted.
  * `missing`: members it couldn't reach (no device in the group).
  */
-export function encrypt(convId, payload, { offline = false } = {}) {
-  return locked(async () => {
+export async function encrypt(convId, payload, { offline = false } = {}) {
+  // (Fetched before taking the lock, so decrypting never waits on the network for it.)
+  if (!offline) await rosterInfo(convId).catch(() => {});
+  return lockedChat(convId, async () => {
     const g = offline ? await loadGroup(convId) : await ready(convId);
     if (!g) return null;
     const m = await M.createApplicationMessage(g.state, enc(JSON.stringify(payload)), ctx.impl);
@@ -400,42 +475,74 @@ export function encrypt(convId, payload, { offline = false } = {}) {
  * Decrypts a message: { state: 'ok', payload } | 'waiting' (not in the group yet) | 'before'
  * (sent before this device joined) | 'failed'.
  */
-export function decrypt(convId, e2ee, { id } = {}) {
-  return locked(async () => {
-    // Another copy of the app on this device (the background one that fills in notifications,
-    // or another tab) may have read it already: its keys are gone then, so use what it saved.
-    if (id) {
-      const rec = await ctx.db.get('plain', id);
-      if (rec?.state === 'ok' && rec.fp === e2ee.ciphertext.slice(-32)) {
-        return { state: 'ok', payload: rec.p || { type: 'text', text: rec.text } };
+export async function decrypt(convId, e2ee, { id } = {}) {
+  const key = id || '_';
+  return (await decryptMany(convId, [{ id: key, e2ee, saved: !!id }])).get(key);
+}
+
+/**
+ * Decrypts a chat's messages (oldest first) in one go: the group is loaded and saved once, and
+ * each message is read with the keys of its own epoch (key changes are applied as they come).
+ * Returns id -> result (as decrypt).
+ */
+export function decryptMany(convId, items) {
+  return lockedChat(convId, async () => {
+    const out = new Map();
+    let g = await loadGroup(convId);
+    if (!g && (await processWelcomes({ only: convId }))) g = await loadGroup(convId);
+    let dirty = false;
+    const known = []; // key changes, fetched once for the whole batch
+    for (const it of items) {
+      // Another copy of the app on this device (the background one that fills in
+      // notifications, or another tab) may have read it already: its keys are gone then.
+      if (it.saved !== false) {
+        const rec = await ctx.db.get('plain', it.id);
+        if (rec?.state === 'ok' && rec.fp === it.e2ee.ciphertext.slice(-32)) {
+          out.set(it.id, { state: 'ok', payload: rec.p || { type: 'text', text: rec.text } });
+          continue;
+        }
+      }
+      if (!g) {
+        out.set(it.id, { state: 'waiting' });
+        continue;
+      }
+      if (it.e2ee.epoch < (g.meta.joinedEpoch ?? 0)) {
+        out.set(it.id, { state: 'before' });
+        continue;
+      }
+      if (it.e2ee.epoch > epochOf(g)) {
+        if (dirty) await saveGroup(convId, g);
+        dirty = false;
+        g = await catchUp(convId, g, { upTo: it.e2ee.epoch, known });
+        if (!g || it.e2ee.epoch > epochOf(g)) {
+          out.set(it.id, { state: 'waiting' }); // removed, or the key change isn't there yet
+          continue;
+        }
+      }
+      try {
+        const r = await M.processMessage(unwire(it.e2ee.ciphertext), g.state, M.emptyPskIndex, M.acceptAll, ctx.impl);
+        zero(r.consumed);
+        g = { state: r.newState, meta: g.meta };
+        dirty = true;
+        out.set(it.id, r.kind === 'applicationMessage' ? { state: 'ok', payload: JSON.parse(dec(r.message)) } : { state: 'failed' });
+      } catch (err) {
+        out.set(it.id, { state: 'failed', error: err.message });
       }
     }
-    let g = await loadGroup(convId);
-    if (!g && (await processWelcomes())) g = await loadGroup(convId);
-    if (!g) return { state: 'waiting' };
-    if (e2ee.epoch < (g.meta.joinedEpoch ?? 0)) return { state: 'before' };
-    if (e2ee.epoch > epochOf(g)) {
-      g = await catchUp(convId, g);
-      if (!g) return { state: 'waiting' };
-    }
-    let r;
-    try {
-      r = await M.processMessage(unwire(e2ee.ciphertext), g.state, M.emptyPskIndex, M.acceptAll, ctx.impl);
-    } catch (err) {
-      return { state: 'failed', error: err.message };
-    }
-    zero(r.consumed);
-    await saveGroup(convId, { state: r.newState, meta: g.meta });
-    if (r.kind !== 'applicationMessage') return { state: 'failed' };
-    return { state: 'ok', payload: JSON.parse(dec(r.message)) };
+    if (dirty) await saveGroup(convId, g);
+    return out;
   });
 }
 
 /** Gets a chat's group ready in the background (opening a chat), so sending is instant. */
-export const prepare = (convId) => locked(() => ready(convId)).catch(() => null);
+export const prepare = (convId) =>
+  rosterInfo(convId)
+    .catch(() => {})
+    .then(() => locked(() => ready(convId), convId))
+    .catch(() => null);
 
 /** A welcome arrived: join that chat's group now. */
-export const onWelcome = () => locked(() => processWelcomes());
+export const onWelcome = () => processWelcomes(); // (each chat's join takes that chat's lock)
 
 // ------------------------------------------------------------------ calls
 

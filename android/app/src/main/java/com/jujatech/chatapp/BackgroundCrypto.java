@@ -2,9 +2,13 @@ package com.jujatech.chatapp;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -114,6 +118,16 @@ final class BackgroundCrypto {
                 return assets.shouldInterceptRequest(request.getUrl());
             }
         });
+        if ((context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            // Debug builds: the page's console in logcat (tag BackgroundCrypto).
+            web.setWebChromeClient(new WebChromeClient() {
+                @Override
+                public boolean onConsoleMessage(ConsoleMessage m) {
+                    Log.d("BackgroundCrypto", m.message() + " (" + m.sourceId() + ":" + m.lineNumber() + ")");
+                    return true;
+                }
+            });
+        }
         web.addJavascriptInterface(new Bridge(), "ChatAppBg");
         pageReady = false;
         web.loadUrl(PAGE);

@@ -58,10 +58,14 @@ export function useRealtime(token) {
     chat.absorbBackgroundDeliveries();
     chat.absorbPushedMessages();
     let initialLoadOk = true;
-    chat.loadConversations().catch((e) => {
+    const conversationsLoaded = chat.loadConversations().catch((e) => {
       initialLoadOk = false;
       if (e.status !== 0) toast(e.message, 'error'); // offline is expected, not an error
     });
+    // Encrypted messages that came while this device was away: read them all, in order.
+    const readMissed = () =>
+      e2ee.readBacklog(Object.values(useChat.getState().conversations).filter((c) => c.e2ee).map((c) => c.id));
+    Promise.all([e2eeReady, conversationsLoaded]).then(readMissed);
     requestNotificationPermission();
     useAuth.getState().refreshMe().catch(() => {}); // fresh profile (e.g. admin access)
     // Android: notification buttons (Reply, Mark as read, Decline) work with the app closed.
@@ -119,7 +123,9 @@ export function useRealtime(token) {
 
     socket.on('connect', () => {
       chat.setConnection('online');
-      if (everConnected || !initialLoadOk) chat.resync();
+      // (Back after a break: device or key changes may have been missed while disconnected.)
+      if (everConnected) e2ee.forgetRosters();
+      if (everConnected || !initialLoadOk) Promise.resolve(chat.resync()).finally(readMissed);
       else chat.retryPending();
       everConnected = true;
     });
@@ -161,7 +167,10 @@ export function useRealtime(token) {
       e2ee.forgetRosters();
       e2ee.resendSoon();
     });
-    socket.on('mls:commit', () => e2ee.resendSoon());
+    socket.on('mls:commit', (p) => {
+      e2ee.noteCommit(p);
+      e2ee.resendSoon();
+    });
     socket.on('mls:sync', () => e2ee.pullOwnDevices());
     socket.on('groupcall:key-request', onCallKeyRequest);
     socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed

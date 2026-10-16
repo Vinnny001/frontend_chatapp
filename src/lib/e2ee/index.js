@@ -138,7 +138,7 @@ async function startNow({ userId, deviceId, background }) {
     if (p?.media && !p.viewOnce) registerMediaKey(p.media);
   }
   try {
-    await mls.init({ userId, deviceId, db });
+    await mls.init({ userId, deviceId, db, background });
     setStatus({ state: 'ready' });
     // anything still waiting for someone's device (not in the short-lived background copy)
     if (!background) resendSoon(5000);
@@ -288,10 +288,11 @@ async function drain() {
       // Oldest first: keys move forward with every message.
       const batch = [...queue.values()].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
       queue.clear();
+      const results = new Map(); // id -> result
+      const toDecrypt = new Map(); // conversation -> its messages, oldest first
       for (const m of batch) {
         if (!session) return;
         const fp = fpOf(m.e2ee.ciphertext);
-        let res;
         // Saved by another copy of the app on this device (the background one that answers
         // notifications, or another tab): sent or decrypted there.
         const savedAs = async (key) => {
@@ -299,10 +300,23 @@ async function drain() {
           return r?.state === 'ok' && r.fp === fp ? r : null;
         };
         const saved = (await savedAs(m.id)) || (await savedAs(m.clientId && `c:${m.clientId}`));
-        if (saved) res = { state: 'ok', payload: payloadOf(saved) };
-        else if (m.e2ee.device === session.deviceId) res = { state: 'own' }; // sent from here, but the saved copy is gone
-        else if (!mls.active()) res = { state: 'waiting' };
-        else res = await mls.decrypt(m.conversationId, m.e2ee, { id: m.id }).catch((e) => ({ state: e?.status === 0 ? 'retry' : 'failed', error: e?.message }));
+        if (saved) results.set(m.id, { state: 'ok', payload: payloadOf(saved) });
+        else if (m.e2ee.device === session.deviceId) results.set(m.id, { state: 'own' }); // sent from here, but the saved copy is gone
+        else if (!mls.active()) results.set(m.id, { state: 'waiting' });
+        else toDecrypt.set(m.conversationId, [...(toDecrypt.get(m.conversationId) || []), m]);
+      }
+      // One go per chat: its encryption state is loaded and saved once, not once per message.
+      for (const [convId, list] of toDecrypt) {
+        if (!session) return;
+        const got = await mls.decryptMany(convId, list.map((m) => ({ id: m.id, e2ee: m.e2ee }))).catch((e) => e);
+        for (const m of list) {
+          results.set(m.id, got instanceof Map ? got.get(m.id) : { state: got?.status === 0 ? 'retry' : 'failed', error: got?.message });
+        }
+      }
+      for (const m of batch) {
+        if (!session) return;
+        const fp = fpOf(m.e2ee.ciphertext);
+        const res = results.get(m.id) || { state: 'failed' };
         const where = { conv: m.conversationId, sender: m.sender, at: m.createdAt };
         const rec = res.state === 'ok' ? { p: res.payload || {}, fp, state: 'ok', ...where } : { fp, state: res.state, ...where };
         if (TRANSIENT.has(rec.state)) lastTry.set(m.id, { at: Date.now(), fp });
@@ -320,6 +334,45 @@ async function drain() {
   } finally {
     draining = false;
   }
+}
+
+const BACKLOG_PAGE = 100;
+let backlog = null;
+
+/**
+ * Reads what this device missed while it was away, in order and all of it (not only what's on
+ * screen): each chat's encrypted messages since the last time, oldest first, so every one is
+ * decrypted with the keys of its own moment. The sender never has to be online again.
+ */
+export function readBacklog(conversationIds) {
+  if (!enabled()) return Promise.resolve();
+  backlog ??= (async () => {
+    lastTry.clear(); // (every message is tried now, none held back by an earlier attempt)
+    for (const convId of conversationIds) {
+      if (!session) return;
+      const key = `seen:${convId}`;
+      let after = await session.db.get('kv', key);
+      if (!after) {
+        // First time on this device: from now on (earlier messages are from before it joined).
+        await session.db.put('kv', key, new Date().toISOString());
+        continue;
+      }
+      for (;;) {
+        const { messages } = await api(`/api/conversations/${convId}/messages?after=${encodeURIComponent(after)}&limit=${BACKLOG_PAGE}`);
+        const encrypted = messages.filter((m) => m.e2ee?.ciphertext && !m.deletedForEveryone);
+        await Promise.all(encrypted.map((m) => revealNow(m, 120_000)));
+        if (!session) return;
+        if (messages.length) {
+          after = messages[messages.length - 1].createdAt;
+          await session.db.put('kv', key, after);
+        }
+        if (messages.length < BACKLOG_PAGE) break;
+      }
+    }
+  })()
+    .catch((err) => console.warn('[e2ee] reading missed messages failed', err))
+    .finally(() => (backlog = null));
+  return backlog;
 }
 
 /** Messages that couldn't be read yet (not in the group, offline): try again now. */
@@ -442,6 +495,10 @@ export function localMessages({ conversationId } = {}) {
 
 export const onWelcome = () => (enabled() ? mls.onWelcome().then(retryWaiting).catch(() => {}) : Promise.resolve());
 export const forgetRosters = (convId) => mls.forgetRosters(convId);
+/** "mls:commit": a device changed a chat's keys (ours are applied already). */
+export function noteCommit({ conversationId, epoch, device }) {
+  if (enabled() && device !== mls.deviceId()) mls.noteEpoch(conversationId, epoch);
+}
 /** Opening a chat: set up / refresh its encryption group early. */
 export const prepare = (convId) => (enabled() ? mls.prepare(convId) : Promise.resolve(null));
 
