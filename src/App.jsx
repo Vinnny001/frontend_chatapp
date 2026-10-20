@@ -26,6 +26,9 @@ import JoinGroupDialog from './components/chat/JoinGroupDialog.jsx';
 import { ViewOnceViewer } from './components/chat/ViewOnce.jsx';
 import LoginRequestPrompt from './components/LoginRequestPrompt.jsx';
 import E2eeGate, { useE2eeStatus } from './components/E2eeGate.jsx';
+import StatusViewer from './components/status/StatusViewer.jsx';
+import StatusComposer from './components/status/StatusComposer.jsx';
+import { useStatus } from './store/status.js';
 import { inviteCodeOf } from './lib/invites.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
@@ -52,7 +55,10 @@ function useBackButton() {
     const handle = CapacitorApp.addListener('backButton', () => {
       const ui = useUI.getState();
       const chat = useChat.getState();
-      if (ui.viewOnce) ui.setViewOnce(null);
+      const status = useStatus.getState();
+      if (status.viewer) status.closeViewer();
+      else if (status.composing) status.compose(null);
+      else if (ui.viewOnce) ui.setViewOnce(null);
       else if (ui.joinCode) ui.setJoinCode(null);
       else if (ui.profilePreview) ui.setProfilePreview(null);
       else if (ui.phoneMenu) ui.closePhoneMenu();
@@ -145,6 +151,8 @@ function Messenger({ token }) {
       <JoinGroupDialog />
       <ViewOnceViewer />
       <LoginRequestPrompt />
+      <StatusViewer />
+      <StatusComposer />
     </div>
   );
 }

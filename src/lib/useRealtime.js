@@ -17,6 +17,7 @@ import { useChat } from '../store/chat.js';
 import { toast } from '../store/ui.js';
 import { loginRequests } from '../components/LoginRequestPrompt.jsx';
 import * as e2ee from './e2ee/index.js';
+import { useStatus } from '../store/status.js';
 import { tokenDeviceId } from './device.js';
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
@@ -66,6 +67,7 @@ export function useRealtime(token) {
     const readMissed = () =>
       e2ee.readBacklog(Object.values(useChat.getState().conversations).filter((c) => c.e2ee).map((c) => c.id));
     Promise.all([e2eeReady, conversationsLoaded]).then(readMissed);
+    e2eeReady.then(() => useStatus.getState().load()).catch(() => {}); // (the dot on the Status button)
     requestNotificationPermission();
     useAuth.getState().refreshMe().catch(() => {}); // fresh profile (e.g. admin access)
     // Android: notification buttons (Reply, Mark as read, Decline) work with the app closed.
@@ -172,6 +174,10 @@ export function useRealtime(token) {
       e2ee.resendSoon();
     });
     socket.on('mls:sync', () => e2ee.pullOwnDevices());
+    // Status updates: someone posted (or deleted) one, or viewed mine.
+    socket.on('status:new', () => useStatus.getState().reloadSoon());
+    socket.on('status:removed', (p) => useStatus.getState().onRemoved(p));
+    socket.on('status:view', () => useStatus.getState().reloadSoon());
     socket.on('groupcall:key-request', onCallKeyRequest);
     socket.on('conversation:upsert', (c) => e2ee.forgetRosters(c.id)); // members may have changed
     socket.on('login:request', loginRequests.add);

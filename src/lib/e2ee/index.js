@@ -15,6 +15,7 @@ import { MENTION_TOKEN } from '../mentions.js';
 import { api } from '../api.js';
 import { storage } from '../storage.js';
 import { LOW_SPACE_BYTES, formatBytes, freeSpace } from '../storageSpace.js';
+import * as statusCrypto from './status.js';
 import { publishContacts, pullSync, startSync, stopSync } from './sync.js';
 
 // Set by the app: where synced contacts go, and this phone's own address-book matches.
@@ -141,7 +142,12 @@ async function startNow({ userId, deviceId, background }) {
     await mls.init({ userId, deviceId, db, background });
     setStatus({ state: 'ready' });
     // anything still waiting for someone's device (not in the short-lived background copy)
-    if (!background) resendSoon(5000);
+    if (!background) {
+      resendSoon(5000);
+      // Status updates are sealed to each device's status key: publish this one's.
+      statusCrypto.ensureStatusKey(db).catch((err) => console.warn('[e2ee] status key', err));
+      statusCrypto.forgetOld(db).catch(() => {});
+    }
   } catch (err) {
     failed('keys', err);
     starting = null;
@@ -239,6 +245,7 @@ function apply(m, p) {
     }),
     viewOnce: !!(m.viewOnce || p.viewOnce),
     forwarded: !!(m.forwarded || p.forwarded),
+    ...(p.statusRef && { statusRef: p.statusRef }),
     e2eeState: 'ok',
   };
 }
@@ -472,6 +479,26 @@ export function contentOf(id) {
 
 /** Text (or caption) of a message, '' if unknown. */
 export const plainText = (id) => contentOf(id)?.text || '';
+
+/** Posts a status update, end-to-end encrypted for the people allowed to see it. */
+export async function postStatus(payload) {
+  if (!enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be posted.');
+  await statusCrypto.ensureStatusKey(session.db);
+  const out = await statusCrypto.post(session.db, payload);
+  if (payload.media) registerMediaKey(payload.media);
+  return out;
+}
+
+/** What a status update says (null if it can't be read on this device). */
+export async function openStatus(status) {
+  if (!enabled()) return null;
+  const p = await statusCrypto.open(session.db, status).catch((err) => {
+    console.warn('[e2ee] status', err);
+    return null;
+  });
+  if (p?.media) registerMediaKey(p.media);
+  return p;
+}
 
 /** View once: the file's key is thrown away once it has been viewed. */
 export function forgetViewOnceKey(id) {

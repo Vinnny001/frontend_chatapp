@@ -180,6 +180,7 @@ function contentForEncryption(m) {
     ...(m.poll && { poll: { question: m.poll.question, options: m.poll.options.map((o) => o.text), multiple: !!m.poll.multiple } }),
     ...(m.viewOnce && { viewOnce: true }),
     ...(m.forwarded && { forwarded: true }),
+    ...(m.statusRef && { statusRef: m.statusRef }),
   };
 }
 
@@ -569,7 +570,7 @@ export const useChat = create((set, get) => {
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
-    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll }) {
+    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef }) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -581,6 +582,8 @@ export const useChat = create((set, get) => {
         media: media || null,
         replyTo: replyTo ? replyPreview(replyTo) : null,
         forwarded,
+        // A reply to someone's status: { owner, preview, bg } (shown as a quote)
+        ...(statusRef && { statusRef }),
         ...(poll && {
           poll: { question: poll.question, options: poll.options.map((text, i) => ({ id: String(i), text })), multiple: !!poll.multiple, votes: [] },
         }),
@@ -778,7 +781,7 @@ export const useChat = create((set, get) => {
     /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
     onRevealed(m) {
       if (!m?.conversationId) return;
-      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, e2eeState: m.e2eeState };
+      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, e2eeState: m.e2eeState };
       patchItem(m.conversationId, m.id, shown);
       patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, ...shown } } : {}));
       if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, ...shown });

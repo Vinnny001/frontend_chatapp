@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, CircleDashed, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
 import DevicesPanel from './DevicesPanel.jsx';
@@ -12,6 +12,8 @@ import NewChatPanel from './NewChatPanel.jsx';
 import NewGroupPanel from './NewGroupPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
 import StarredPanel from './StarredPanel.jsx';
+import StatusPanel from '../status/StatusPanel.jsx';
+import { unseenCount, useStatus } from '../../store/status.js';
 import { useAuth } from '../../store/auth.js';
 import { conversationTitle, previewText, useChat } from '../../store/chat.js';
 import { useUI } from '../../store/ui.js';
@@ -31,7 +33,7 @@ function MediaHubPanel() {
   );
 }
 
-const PANELS = { newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel, blocked: BlockedPanel, devices: DevicesPanel };
+const PANELS = { status: StatusPanel, newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel, blocked: BlockedPanel, devices: DevicesPanel };
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);
@@ -45,6 +47,7 @@ export default function Sidebar() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [menu, setMenu] = useState(null);
+  const unseen = useStatus(unseenCount);
 
   const me = user?.id;
   const all = useMemo(() => Object.values(conversations), [conversations]);
@@ -82,6 +85,10 @@ export default function Sidebar() {
             <span className={`conn conn-${connection}`}>{connection === 'offline' ? 'Offline – waiting for network' : 'Connecting…'}</span>
           )}
         </div>
+        <button className="icon-btn status-btn" onClick={() => openPanel('status')} aria-label={unseen ? `Status, ${unseen} with new updates` : 'Status'} title="Status">
+          <CircleDashed size={20} />
+          {unseen > 0 && <span className="status-dot" />}
+        </button>
         <button className="icon-btn" onClick={() => openPanel('calls')} aria-label="Calls" title="Calls">
           <Phone size={20} />
         </button>

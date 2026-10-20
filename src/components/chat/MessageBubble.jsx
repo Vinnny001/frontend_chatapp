@@ -527,6 +527,16 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
           {msg.replyTo && !deleted && (
             <ReplyQuote reply={msg.replyTo} conv={conv} me={me} onClick={() => chat.jumpTo(conv.id, msg.replyTo.id)} />
           )}
+          {msg.statusRef && !deleted && (
+            // A reply to a status update (WhatsApp shows the update it answers)
+            <div className="reply-quote status-quote">
+              <span className="reply-body">
+                <strong>{msg.statusRef.owner === me ? 'You' : conv.participants.find((p) => p.id === msg.statusRef.owner)?.name || 'Someone'} · Status</strong>
+                <span>{msg.statusRef.preview}</span>
+              </span>
+              {msg.statusRef.kind === 'text' && msg.statusRef.bg && <span className="status-quote-swatch" style={{ background: msg.statusRef.bg }} />}
+            </div>
+          )}
           {deleted ? (
             <span className="deleted-text">
               <Ban size={15} /> {mine ? 'You deleted this message' : 'This message was deleted'}
