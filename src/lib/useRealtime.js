@@ -18,6 +18,7 @@ import { toast } from '../store/ui.js';
 import { loginRequests } from '../components/LoginRequestPrompt.jsx';
 import * as e2ee from './e2ee/index.js';
 import { useStatus } from '../store/status.js';
+import { supportUpdated } from './supportEvents.js';
 import { tokenDeviceId } from './device.js';
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
@@ -151,6 +152,8 @@ export function useRealtime(token) {
     socket.on('message:new', (m) => useChat.getState().onMessageNew(m));
     socket.on('message:updated', (p) => useChat.getState().onMessageUpdated(p));
     socket.on('conversation:marked', (p) => useChat.getState().onMarked(p));
+    // Help: support replied to one of my requests (or an admin's inbox changed).
+    socket.on('support:update', (p) => supportUpdated(p));
     socket.on('message:removed', (p) => useChat.getState().onMessageRemoved(p));
     socket.on('receipt', (r) => useChat.getState().onReceipt(r));
     socket.on('typing', (t) => useChat.getState().onTyping(t));

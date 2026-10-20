@@ -2707,3 +2707,217 @@ button.composer-locked.blocked {
   border-radius: 6px;
   flex: none;
 }
+
+/* ---------- Message info */
+.msg-info-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0;
+}
+.msg-info-line {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.msg-info-line svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+.msg-info-line svg.tick-read {
+  color: var(--tick-read);
+}
+.msg-info-line strong {
+  display: block;
+}
+.msg-info-line small {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.msg-info-count {
+  color: var(--text-3);
+  font-weight: 500;
+  margin-left: 4px;
+}
+.msg-info-more {
+  margin: 4px 0 0 50px;
+}
+
+/* ---------- Help and support */
+.help-panel {
+  padding-bottom: 16px;
+}
+.help-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.faq-section {
+  padding: 0 16px;
+}
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.faq-q svg {
+  flex: none;
+  color: var(--text-3);
+  transition: transform 0.15s var(--ease);
+}
+.faq-item.open .faq-q svg {
+  transform: rotate(180deg);
+}
+.faq-a {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.support-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.support-form label > span {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+.support-form input,
+.support-form select,
+.support-form textarea,
+.ticket-reply textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.support-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.support-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.ticket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ticket-state {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ticket-state.answered {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.ticket-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ticket-msg {
+  max-width: 85%;
+  align-self: flex-start;
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.ticket-msg.mine {
+  align-self: flex-end;
+  background: var(--bubble-out);
+  color: var(--bubble-text);
+}
+.ticket-msg p {
+  margin: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ticket-who {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+.ticket-msg small {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ticket-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-support {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+}
+.admin-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.admin-ticket-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.admin-ticket-top small,
+.admin-ticket-sub {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.admin-ticket-last {
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.admin-support-user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text-2);
+}

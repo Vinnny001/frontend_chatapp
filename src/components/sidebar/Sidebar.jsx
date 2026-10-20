@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, CircleDashed, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, CircleDashed, HelpCircle, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
 import DevicesPanel from './DevicesPanel.jsx';
@@ -13,6 +13,7 @@ import NewGroupPanel from './NewGroupPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
 import StarredPanel from './StarredPanel.jsx';
 import StatusPanel from '../status/StatusPanel.jsx';
+import HelpPanel from '../help/HelpPanel.jsx';
 import { unseenCount, useStatus } from '../../store/status.js';
 import { useAuth } from '../../store/auth.js';
 import { conversationTitle, previewText, useChat } from '../../store/chat.js';
@@ -33,7 +34,7 @@ function MediaHubPanel() {
   );
 }
 
-const PANELS = { status: StatusPanel, newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel, blocked: BlockedPanel, devices: DevicesPanel };
+const PANELS = { help: HelpPanel, status: StatusPanel, newChat: NewChatPanel, newGroup: NewGroupPanel, settings: SettingsPanel, starred: StarredPanel, calls: CallsPanel, hub: MediaHubPanel, blocked: BlockedPanel, devices: DevicesPanel };
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);
@@ -166,6 +167,7 @@ export default function Sidebar() {
             user?.isAdmin && { label: 'Admin', icon: Shield, onClick: () => useUI.getState().setAdminOpen(true) },
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
+            { label: 'Help', icon: HelpCircle, onClick: () => openPanel('help') },
             { label: 'Log out', icon: LogOut, danger: true, onClick: logout },
           ]}
         />

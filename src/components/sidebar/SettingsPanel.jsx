@@ -309,6 +309,14 @@ export default function SettingsPanel() {
       <h3 className="section-label">Storage</h3>
       <StorageRow />
 
+      <h3 className="section-label">Help</h3>
+      <div className="settings-group">
+        <button className="settings-link" onClick={() => useUI.getState().openPanel('help')}>
+          <span>Help and support</span>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
       <button className="btn btn-danger-ghost btn-block logout" onClick={logout}>
         <LogOut size={18} /> Log out
       </button>

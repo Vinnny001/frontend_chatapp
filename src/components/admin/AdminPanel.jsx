@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import AdminSupport from './AdminSupport.jsx';
 import { createPortal } from 'react-dom';
 import { Ban, Download, Flag, RefreshCw, Search, Shield, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
@@ -292,6 +293,7 @@ export default function AdminPanel() {
   const open = useUI((s) => s.adminOpen);
   const [tab, setTab] = useState('overview');
   const [openReports, setOpenReports] = useState(null);
+  const [openSupport, setOpenSupport] = useState(null);
   if (!open) return null;
   const close = () => useUI.getState().setAdminOpen(false);
   return createPortal(
@@ -304,6 +306,7 @@ export default function AdminPanel() {
             ['overview', 'Overview'],
             ['users', 'Users'],
             ['reports', `Reports${openReports ? ` (${openReports})` : ''}`],
+            ['support', `Support${openSupport ? ` (${openSupport})` : ''}`],
           ].map(([id, label]) => (
             <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
               {label}
@@ -318,6 +321,7 @@ export default function AdminPanel() {
         {tab === 'overview' && <Overview />}
         {tab === 'users' && <Users />}
         {tab === 'reports' && <Reports onCount={setOpenReports} />}
+        {tab === 'support' && <AdminSupport onCount={setOpenSupport} />}
       </main>
     </div>,
     document.body
