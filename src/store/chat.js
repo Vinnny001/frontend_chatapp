@@ -181,6 +181,7 @@ function contentForEncryption(m) {
     ...(m.viewOnce && { viewOnce: true }),
     ...(m.forwarded && { forwarded: true }),
     ...(m.statusRef && { statusRef: m.statusRef }),
+    ...(m.quoteRef && { quoteRef: m.quoteRef }),
   };
 }
 
@@ -400,6 +401,38 @@ export const useChat = create((set, get) => {
       const { conversation } = await api('/api/conversations/direct', { method: 'POST', body: { userId } });
       get().upsertConversation(conversation);
       get().openConversation(conversation.id);
+      return conversation.id;
+    },
+
+    /** "Reply privately" to someone's group message: our one-to-one chat, quoting it. */
+    async replyPrivately(msg) {
+      const group = get().conversations[msg.conversationId];
+      const sender = group?.participants.find((p) => p.id === msg.sender);
+      const quoteRef = {
+        conversationId: msg.conversationId,
+        messageId: msg.id,
+        sender: msg.sender,
+        senderName: sender?.name || 'Someone',
+        chat: group?.name || 'Group',
+        preview: previewText(msg).slice(0, 200),
+      };
+      const convId = await get().openDirect(msg.sender);
+      get().setComposer(convId, { privateReply: quoteRef, replyTo: null, editing: null });
+    },
+
+    // ---- Selecting messages (copy, star, delete several at once)
+    selection: null, // { convId, ids: [] }
+    startSelection(msg) {
+      set({ selection: { convId: msg.conversationId, ids: [msg.id] } });
+    },
+    toggleSelected(msg) {
+      const sel = get().selection;
+      if (!sel || sel.convId !== msg.conversationId) return;
+      const ids = sel.ids.includes(msg.id) ? sel.ids.filter((x) => x !== msg.id) : [...sel.ids, msg.id];
+      set({ selection: ids.length ? { ...sel, ids } : null });
+    },
+    clearSelection() {
+      set({ selection: null });
     },
 
     async createGroup(data) {
@@ -433,6 +466,7 @@ export const useChat = create((set, get) => {
     },
 
     openConversation(id) {
+      if (get().selection && get().selection.convId !== id) set({ selection: null }); // (selecting ends with the chat)
       // Where the "N unread messages" line goes: remembered before the chat is marked read,
       // and kept while the chat stays open.
       const conv = id ? get().conversations[id] : null;
@@ -449,7 +483,7 @@ export const useChat = create((set, get) => {
       if (t?.loaded) get().markRead(id);
     },
 
-    closeConversation: () => set({ activeId: null }),
+    closeConversation: () => set({ activeId: null, selection: null }),
 
     // ---------------------------------------------------------------- messages
 
@@ -571,7 +605,7 @@ export const useChat = create((set, get) => {
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
-    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef }) {
+    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef, quoteRef }) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -585,6 +619,8 @@ export const useChat = create((set, get) => {
         forwarded,
         // A reply to someone's status: { owner, preview, bg } (shown as a quote)
         ...(statusRef && { statusRef }),
+        // A private reply to a group message: { conversationId, messageId, sender, senderName, chat, preview }
+        ...(quoteRef && { quoteRef }),
         ...(poll && {
           poll: { question: poll.question, options: poll.options.map((text, i) => ({ id: String(i), text })), multiple: !!poll.multiple, votes: [] },
         }),
@@ -782,7 +818,7 @@ export const useChat = create((set, get) => {
     /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
     onRevealed(m) {
       if (!m?.conversationId) return;
-      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, e2eeState: m.e2eeState };
+      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, quoteRef: m.quoteRef, e2eeState: m.e2eeState };
       patchItem(m.conversationId, m.id, shown);
       patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, ...shown } } : {}));
       if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, ...shown });

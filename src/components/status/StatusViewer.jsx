@@ -117,7 +117,7 @@ export default function StatusViewer() {
       const { conversation } = await api('/api/conversations/direct', { method: 'POST', body: { userId: group.user.id } });
       const chat = useChat.getState();
       chat.upsertConversation(conversation);
-      chat.sendMessage(conversation.id, { text, statusRef: { owner: group.user.id, kind: status.payload.kind, preview: previewOf(status.payload), bg: status.payload.bg } });
+      chat.sendMessage(conversation.id, { text, statusRef: { id: status.id, owner: group.user.id, kind: status.payload.kind, preview: previewOf(status.payload), bg: status.payload.bg } });
       toast('Reply sent');
     } catch (err) {
       toast(err.message, 'error');

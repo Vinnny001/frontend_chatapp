@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BarChart3, Camera, Check, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 import EmojiPicker from './EmojiPicker.jsx';
 import AttachmentPreview from './AttachmentPreview.jsx';
 import Menu from '../common/Menu.jsx';
@@ -93,7 +95,8 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   const [mention, setMention] = useState(null); // { start, end, q } while typing "@…"
   const [mentionIndex, setMentionIndex] = useState(0);
 
-  const { replyTo, editing } = state;
+  const { replyTo, editing, privateReply } = state;
+  const backdrop = useRef(null);
 
   const setTyping = (st) => {
     clearTimeout(typing.current.idle);
@@ -167,9 +170,23 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     else setTyping('stop');
   }
 
+  /**
+   * The "@Name"s in the box that are mentions: picked from the list, or typed in full (a group
+   * member's name or @username, as on WhatsApp).
+   */
+  function mentionsIn(value) {
+    const found = new Map(mentioned.current);
+    for (const p of members) {
+      for (const shown of [atName(p.name), p.username && `@${p.username}`]) {
+        if (shown && !found.has(shown) && value.includes(shown)) found.set(shown, mentionToken(p));
+      }
+    }
+    return found;
+  }
+
   // "@Name" back to tokens, longest names first so "@Ann" can't eat part of "@Ann Lee".
   function withTokens(value) {
-    const pairs = [...mentioned.current].sort((a, b) => b[0].length - a[0].length);
+    const pairs = [...mentionsIn(value)].sort((a, b) => b[0].length - a[0].length);
     const out = pairs.reduce((s, [shown, token]) => s.split(shown).join(token), value);
     mentioned.current = new Map();
     return out;
@@ -210,9 +227,9 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
       setText(state.draft || '');
       return;
     }
-    sendMessage(conv.id, { text: body, replyTo });
+    sendMessage(conv.id, { text: body, replyTo, quoteRef: privateReply || undefined });
     setText('');
-    setComposer(conv.id, { draft: '', replyTo: null });
+    setComposer(conv.id, { draft: '', replyTo: null, privateReply: null });
     setTyping('stop');
     input.current?.focus();
   }
@@ -234,8 +251,8 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
       e.preventDefault();
       submit();
     }
-    if (e.key === 'Escape' && (editing || replyTo)) {
-      setComposer(conv.id, { editing: null, replyTo: null });
+    if (e.key === 'Escape' && (editing || replyTo || privateReply)) {
+      setComposer(conv.id, { editing: null, replyTo: null, privateReply: null });
       if (editing) setText(state.draft || '');
     }
   }
@@ -294,8 +311,30 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
 
   const who = replyTo && (replyTo.sender === me ? 'You' : conv.participants.find((p) => p.id === replyTo.sender)?.name || 'Someone');
 
+  // The text with its mentions coloured, drawn behind the (transparent) box.
+  const highlighted = (() => {
+    const shownNames = [...mentionsIn(text).keys()].sort((a, b) => b.length - a.length);
+    if (!shownNames.length) return text;
+    const re = new RegExp(`(${shownNames.map(escapeRegExp).join('|')})`, 'g');
+    return text.split(re).map((part, i) => (shownNames.includes(part) ? <mark key={i} className="mention">{part}</mark> : part));
+  })();
+
   return (
     <div className="composer-wrap">
+      {privateReply && !editing && (
+        <div className="composer-context">
+          <Reply size={18} />
+          <div className="composer-context-body">
+            <strong>
+              Replying privately to {privateReply.senderName} · {privateReply.chat}
+            </strong>
+            <span>{privateReply.preview}</span>
+          </div>
+          <button className="icon-btn" onClick={() => setComposer(conv.id, { privateReply: null })} aria-label="Cancel">
+            <X size={18} />
+          </button>
+        </div>
+      )}
       {(replyTo || editing) && (
         <div className="composer-context">
           {editing ? <Pencil size={18} /> : <Reply size={18} />}
@@ -372,21 +411,30 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
                 <Paperclip size={21} />
               </button>
             )}
-            <textarea
-              ref={input}
-              rows={1}
-              value={text}
-              placeholder="Type a message"
-              onChange={(e) => {
-                updateText(e.target.value);
-                findMention(e.target.value, e.target.selectionStart);
-              }}
-              onBlur={() => setTimeout(() => setMention(null), 150)}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              maxLength={65536}
-              aria-label="Message"
-            />
+            <div className="composer-field">
+              <div ref={backdrop} className="composer-highlight" aria-hidden="true">
+                {highlighted}
+                {'​'}
+              </div>
+              <textarea
+                ref={input}
+                rows={1}
+                value={text}
+                placeholder="Type a message"
+                onChange={(e) => {
+                  updateText(e.target.value);
+                  findMention(e.target.value, e.target.selectionStart);
+                }}
+                onScroll={(e) => {
+                  if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+                }}
+                onBlur={() => setTimeout(() => setMention(null), 150)}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                maxLength={65536}
+                aria-label="Message"
+              />
+            </div>
           </>
         )}
 

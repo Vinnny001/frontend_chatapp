@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ChatHeader from './ChatHeader.jsx';
+import SelectionBar from './SelectionBar.jsx';
 import PinnedBar from './PinnedBar.jsx';
 import MessageList from './MessageList.jsx';
 import Composer from './Composer.jsx';
@@ -14,6 +15,7 @@ export default function ChatView({ convId }) {
   const me = useAuth((s) => s.user?.id);
   const [dropFiles, setDropFiles] = useState(null);
   const [dragging, setDragging] = useState(false);
+  const selecting = useChat((s) => s.selection?.convId === convId);
 
   if (!conv) return <EmptyChat />;
 
@@ -33,7 +35,7 @@ export default function ChatView({ convId }) {
         if (e.dataTransfer.files.length) setDropFiles([...e.dataTransfer.files]);
       }}
     >
-      <ChatHeader conv={conv} />
+      {selecting ? <SelectionBar conv={conv} /> : <ChatHeader conv={conv} />}
       {/* A new set of pins starts again from the newest. */}
       <PinnedBar key={`${conv.id}:${(conv.pinned || []).map((p) => p.messageId).join()}`} conv={conv} me={me} />
       <MessageList conv={conv} />

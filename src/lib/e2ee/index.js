@@ -262,6 +262,7 @@ function apply(m, p) {
     viewOnce: !!(m.viewOnce || p.viewOnce),
     forwarded: !!(m.forwarded || p.forwarded),
     ...(p.statusRef && { statusRef: p.statusRef }),
+    ...(p.quoteRef && { quoteRef: p.quoteRef }),
     e2eeState: 'ok',
   };
 }

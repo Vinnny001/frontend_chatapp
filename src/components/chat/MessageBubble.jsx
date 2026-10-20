@@ -1,7 +1,9 @@
 import { memo, useRef, useState } from 'react';
 import {
   Ban,
+  CheckSquare,
   ChevronDown,
+  MessageCircle,
   CloudDownload,
   CloudOff,
   Copy,
@@ -43,6 +45,8 @@ import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { inviteCodeOf } from '../../lib/invites.js';
+import { api } from '../../lib/api.js';
+import { openStatusFromRef } from '../../store/status.js';
 import { contentOf } from '../../lib/e2ee/index.js';
 import { PollBody } from './Poll.jsx';
 import { ViewOnceBody } from './ViewOnce.jsx';
@@ -55,14 +59,53 @@ const DELETE_WINDOW_MS = 48 * 3600 * 1000;
 const EMOJI_ONLY = /^(\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}‍️]|\s)+$/u;
 
 function RichText({ text, conv, me }) {
-  return splitMentions(text).flatMap((piece, j) =>
+  const [menu, setMenu] = useState(null); // { x, y, id, name }
+  const pieces = splitMentions(text).flatMap((piece, j) =>
     typeof piece === 'string' ? (
       <Linked key={j} text={piece} />
     ) : (
-      <span key={j} className={`mention ${piece.mention.id === me ? 'me' : ''}`}>
+      // A mention, as on WhatsApp: tap it to message that person.
+      <button
+        key={j}
+        type="button"
+        className={`mention ${piece.mention.id === me ? 'me' : ''}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (piece.mention.id === me) return;
+          setMenu({ x: e.clientX, y: e.clientY, id: piece.mention.id, name: mentionName(conv, piece.mention.id, piece.mention.label, me) });
+        }}
+      >
         {mentionName(conv, piece.mention.id, piece.mention.label, me)}
-      </span>
+      </button>
     )
+  );
+  return (
+    <>
+      {pieces}
+      {menu && (
+        <Menu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: `Message ${menu.name}`, icon: MessageCircle, onClick: () => useChat.getState().openDirect(menu.id).catch((err) => toast(err.message, 'error')) },
+            {
+              label: 'View profile',
+              icon: Info,
+              onClick: async () => {
+                try {
+                  const { conversation } = await api('/api/conversations/direct', { method: 'POST', body: { userId: menu.id } });
+                  useChat.getState().upsertConversation(conversation);
+                  useUI.getState().setProfilePreview(conversation.id);
+                } catch (err) {
+                  toast(err.message, 'error');
+                }
+              },
+            },
+          ]}
+        />
+      )}
+    </>
   );
 }
 
@@ -423,6 +466,8 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
   const [dx, setDx] = useState(0);
   const chat = useChat.getState();
   const setForwarding = useUI((s) => s.setForwarding);
+  // Selecting messages (copy several): this chat's selection, if any.
+  const selection = useChat((s) => (s.selection?.convId === conv.id ? s.selection : null));
 
   if (msg.type === 'system') {
     return (
@@ -456,6 +501,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
       ? [{ label: 'Delete for me', icon: Trash2, danger: true, onClick: () => chat.deleteMessage(msg, false) }]
       : [
           { label: 'Reply', icon: Reply, onClick: reply },
+          sender && { label: 'Reply privately', icon: MessageCircle, onClick: () => chat.replyPrivately(msg).catch((e) => toast(e.message, 'error')) },
           { label: 'React', icon: SmilePlus, onClick: () => setPicker('full') },
           msg.text && {
             label: 'Copy',
@@ -475,6 +521,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             onClick: () => chat.setComposer(conv.id, { editing: msg, replyTo: null }),
           },
           mine && { label: 'Message info', icon: Info, onClick: () => setInfo(true) },
+          { label: 'Select', icon: CheckSquare, onClick: () => chat.startSelection(msg) },
           { label: 'Delete for me', icon: Trash2, danger: true, onClick: () => chat.deleteMessage(msg, false) },
           ((mine && age < DELETE_WINDOW_MS) || isAdmin) && {
             label: 'Delete for everyone',
@@ -506,14 +553,29 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
     },
   };
 
+  const selecting = !!selection && !msg.pending;
+  const selected = selecting && selection.ids.includes(msg.id);
+
   return (
     <div
-      className={`msg-row ${mine ? 'out' : 'in'} ${grouped ? 'grouped' : ''} ${flash ? 'flash' : ''}`}
+      className={`msg-row ${mine ? 'out' : 'in'} ${grouped ? 'grouped' : ''} ${flash ? 'flash' : ''} ${selecting ? 'selecting' : ''} ${selected ? 'selected' : ''}`}
       data-mid={msg.id}
-      onContextMenu={open}
-      onClickCapture={longPress.onClickCapture}
-      {...touch}
+      onContextMenu={selecting ? (e) => e.preventDefault() : open}
+      onClickCapture={(e) => {
+        if (selecting) {
+          // While selecting, a tap (anywhere on the row) selects or unselects the message.
+          e.preventDefault();
+          e.stopPropagation();
+          chat.toggleSelected(msg);
+          return;
+        }
+        longPress.onClickCapture(e);
+      }}
+      {...(selecting ? {} : touch)}
     >
+      {selecting && (
+        <span className={`msg-check ${selected ? 'on' : ''}`} role="checkbox" aria-checked={selected} aria-label="Select message" />
+      )}
       <div className="msg-stack" style={dx ? { transform: `translateX(${dx}px)` } : undefined}>
         <div
           className={`bubble ${emojiOnly ? 'emoji-only' : ''} ${hasMedia && !special && !msg.text && msg.type !== 'file' && msg.type !== 'voice' ? 'media-only' : ''} ${msg.type === 'poll' ? 'poll-bubble' : ''}`}
@@ -527,15 +589,35 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
           {msg.replyTo && !deleted && (
             <ReplyQuote reply={msg.replyTo} conv={conv} me={me} onClick={() => chat.jumpTo(conv.id, msg.replyTo.id)} />
           )}
+          {msg.quoteRef && !deleted && (
+            // A private reply to a message in a group: tap it to see that message there.
+            <button
+              className="reply-quote"
+              onClick={() => {
+                const target = useChat.getState().conversations[msg.quoteRef.conversationId];
+                if (!target) return toast('You’re no longer in that group');
+                useChat.getState().openConversation(msg.quoteRef.conversationId);
+                setTimeout(() => useChat.getState().jumpTo(msg.quoteRef.conversationId, msg.quoteRef.messageId), 300);
+                return undefined;
+              }}
+            >
+              <span className="reply-body">
+                <strong>
+                  {msg.quoteRef.sender === me ? 'You' : msg.quoteRef.senderName} · {msg.quoteRef.chat}
+                </strong>
+                <span>{msg.quoteRef.preview}</span>
+              </span>
+            </button>
+          )}
           {msg.statusRef && !deleted && (
-            // A reply to a status update (WhatsApp shows the update it answers)
-            <div className="reply-quote status-quote">
+            // A reply to a status update (WhatsApp shows the update it answers): tap it to see it.
+            <button className="reply-quote status-quote" onClick={() => openStatusFromRef(msg.statusRef, me)}>
               <span className="reply-body">
                 <strong>{msg.statusRef.owner === me ? 'You' : conv.participants.find((p) => p.id === msg.statusRef.owner)?.name || 'Someone'} · Status</strong>
                 <span>{msg.statusRef.preview}</span>
               </span>
               {msg.statusRef.kind === 'text' && msg.statusRef.bg && <span className="status-quote-swatch" style={{ background: msg.statusRef.bg }} />}
-            </div>
+            </button>
           )}
           {deleted ? (
             <span className="deleted-text">

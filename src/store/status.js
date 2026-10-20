@@ -3,6 +3,7 @@ import { api, uploadFile } from '../lib/api.js';
 import * as e2ee from '../lib/e2ee/index.js';
 import { encryptFile } from '../lib/e2ee/files.js';
 import { rememberMedia } from '../lib/media.js';
+import { toast } from './ui.js';
 
 /** Background colours for text updates (white text reads on all of them). */
 export const STATUS_COLORS = ['#0b8f6a', '#5b45c2', '#c2410c', '#be185d', '#1d4ed8', '#374151', '#7c3aed', '#0f766e'];
@@ -104,6 +105,22 @@ export const useStatus = create((set, get) => ({
     set({ mine: get().mine.filter((s) => s.id !== id), others: get().others.map((g) => ({ ...g, statuses: g.statuses.filter((s) => s.id !== id) })).filter((g) => g.statuses.length) });
   },
 }));
+
+/**
+ * A reply to a status, tapped in a chat: open that status (as on WhatsApp), if it's still
+ * there (statuses go after 24 hours, or when deleted).
+ */
+export async function openStatusFromRef(ref, me) {
+  const store = useStatus.getState();
+  await store.load().catch(() => {});
+  const { mine, others } = useStatus.getState();
+  const own = ref.owner === me;
+  const list = own ? mine : others.find((g) => g.user.id === ref.owner)?.statuses || [];
+  const index = ref.id ? list.findIndex((s) => s.id === ref.id) : -1;
+  if (index < 0) return toast('This status update is no longer available');
+  useStatus.getState().openViewer(own ? 'me' : ref.owner, index);
+  return undefined;
+}
 
 /** People with updates I haven't seen (not muted): for the dot on the Status button. */
 export const unseenCount = (s) => s.others.filter((g) => !g.muted && g.statuses.some((x) => !x.viewed)).length;
