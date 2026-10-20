@@ -139,6 +139,17 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     if (replyTo) input.current?.focus();
   }, [replyTo]);
 
+  // A chat link's message, typed in (also when this chat was already open).
+  useEffect(() => {
+    if (!state.prefilledAt) return;
+    setText(state.draft || '');
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      const end = (state.draft || '').length;
+      input.current?.setSelectionRange(end, end);
+    });
+  }, [state.prefilledAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (droppedFiles?.length) {
       setFiles(droppedFiles);

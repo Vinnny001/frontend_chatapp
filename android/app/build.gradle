@@ -5,6 +5,9 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.jujatech.chatapp"
+        // The API's address: its /chat and /join links open in the app (verified App Links,
+        // see the API's /.well-known/assetlinks.json).
+        manifestPlaceholders = [linkHost: "api-chatapp-3yoe.onrender.com"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

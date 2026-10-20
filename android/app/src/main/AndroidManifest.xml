@@ -19,12 +19,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Group invite links: the API's /join page opens chatapp://join/<code> -->
+            <!-- Group invite links and chat links, opened by the API's pages: chatapp://join/<code>,
+                 chatapp://chat/<username or phone>?text=… -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="chatapp" android:host="join" />
+                <data android:scheme="chatapp" android:host="chat" />
+            </intent-filter>
+            <!-- The same https links open the app directly, like wa.me (Android checks the site's
+                 /.well-known/assetlinks.json for this app's signing key) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${linkHost}" android:pathPrefix="/chat/" />
+                <data android:scheme="https" android:host="${linkHost}" android:pathPrefix="/join/" />
             </intent-filter>
         </activity>
 

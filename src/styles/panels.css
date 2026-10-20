@@ -2921,3 +2921,20 @@ button.composer-locked.blocked {
   font-size: 13px;
   color: var(--text-2);
 }
+
+/* My chat link (Settings) */
+.chat-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+}
+.chat-link-url {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--accent-strong);
+  font-size: 13px;
+  word-break: break-all;
+}

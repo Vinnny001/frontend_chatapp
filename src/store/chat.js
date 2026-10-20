@@ -404,6 +404,18 @@ export const useChat = create((set, get) => {
       return conversation.id;
     },
 
+    /**
+     * A chat link (wa.me style) was opened: the chat with that person, with the link's message
+     * typed in (not sent).
+     */
+    async openChatLink({ who, text }) {
+      const { user } = await api(`/api/links/chat/${encodeURIComponent(who)}`);
+      if (user.id === meId()) return toast('That’s your own chat link');
+      const convId = await get().openDirect(user.id);
+      if (text) get().setComposer(convId, { draft: text, prefilledAt: Date.now() });
+      return convId;
+    },
+
     /** "Reply privately" to someone's group message: our one-to-one chat, quoting it. */
     async replyPrivately(msg) {
       const group = get().conversations[msg.conversationId];

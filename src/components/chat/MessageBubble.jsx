@@ -45,6 +45,7 @@ import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
 import { mentionName, plainMentions, splitMentions } from '../../lib/mentions.js';
 import { inviteCodeOf } from '../../lib/invites.js';
+import { chatLinkOf } from '../../lib/chatLinks.js';
 import { api } from '../../lib/api.js';
 import { openStatusFromRef } from '../../store/status.js';
 import { contentOf } from '../../lib/e2ee/index.js';
@@ -135,11 +136,16 @@ function Linked({ text }) {
         rel="noreferrer noopener"
         onClick={(e) => {
           e.stopPropagation();
-          // Group invite links open the join card here instead of the browser.
+          // Group invite links open the join card here instead of the browser, and chat links
+          // the chat with that person.
           const code = inviteCodeOf(part.url);
+          const chat = !code && chatLinkOf(part.url);
           if (code) {
             e.preventDefault();
             useUI.getState().setJoinCode(code);
+          } else if (chat) {
+            e.preventDefault();
+            useChat.getState().openChatLink(chat).catch((err) => toast(err.message, 'error'));
           }
         }}
       >

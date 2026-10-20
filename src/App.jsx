@@ -3,7 +3,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { useAuth } from './store/auth.js';
 import { useChat } from './store/chat.js';
-import { useUI } from './store/ui.js';
+import { toast, useUI } from './store/ui.js';
 import { useRealtime } from './lib/useRealtime.js';
 import AuthScreen from './components/AuthScreen.jsx';
 import VerifyEmailScreen from './components/VerifyEmailScreen.jsx';
@@ -30,6 +30,7 @@ import StatusViewer from './components/status/StatusViewer.jsx';
 import StatusComposer from './components/status/StatusComposer.jsx';
 import { useStatus } from './store/status.js';
 import { inviteCodeOf } from './lib/invites.js';
+import { chatLinkOf } from './lib/chatLinks.js';
 import { useCall } from './store/call.js';
 import { nativeCallScreenShown } from './lib/native.js';
 
@@ -75,14 +76,30 @@ function useBackButton() {
   }, []);
 }
 
-/** Group invite links opened from other apps (chatapp://join/<code>), also on a cold start. */
+/**
+ * Links that open the app: group invites (…/join/<code>) and chat links (…/chat/<who>?text=),
+ * from other apps on the phone (also on a cold start) or, on the web, this page's address.
+ */
+function openAppLink(url) {
+  const code = inviteCodeOf(url);
+  if (code) return useUI.getState().setJoinCode(code);
+  const chat = chatLinkOf(url);
+  if (chat) useChat.getState().openChatLink(chat).catch((e) => toast(e.message, 'error'));
+  return undefined;
+}
+
 function useInviteLinks() {
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return undefined;
-    const open = (url) => {
-      const code = inviteCodeOf(url);
-      if (code) useUI.getState().setJoinCode(code);
-    };
+    if (!Capacitor.isNativePlatform()) {
+      // The web: a chat link's "Continue in the browser" lands here as /?chat=<who>&text=…
+      const q = new URLSearchParams(window.location.search);
+      if (q.get('chat')) {
+        useChat.getState().openChatLink({ who: q.get('chat'), text: q.get('text') || '' }).catch((e) => toast(e.message, 'error'));
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      return undefined;
+    }
+    const open = openAppLink;
     CapacitorApp.getLaunchUrl()
       .then((r) => open(r?.url))
       .catch(() => {});

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronRight, LogOut, Pencil } from 'lucide-react';
+import { Check, ChevronRight, Copy, LogOut, Pencil, Share2 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
+import { chatLink } from '../../lib/chatLinks.js';
 import SidePanel from './SidePanel.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import UsernameInput from '../common/UsernameInput.jsx';
@@ -169,6 +172,48 @@ function StorageRow() {
   );
 }
 
+/**
+ * My chat link (like wa.me): people who open it land in a chat with me, with the message I
+ * chose typed in. Opens ChatApp directly on Android, or the web app.
+ */
+function MyChatLink({ user }) {
+  const [text, setText] = useState('');
+  const who = user.username || user.phone;
+  if (!who) return null;
+  const link = chatLink(who, text);
+  const copy = () => navigator.clipboard?.writeText(link).then(() => toast('Link copied'), () => toast('Could not copy', 'error'));
+  const share = () =>
+    Capacitor.isNativePlatform()
+      ? Share.share({ title: 'Chat with me on ChatApp', text: 'Chat with me on ChatApp', url: link }).catch(() => {})
+      : navigator.share
+        ? navigator.share({ title: 'Chat with me on ChatApp', url: link }).catch(() => {})
+        : copy();
+  return (
+    <div className="settings-group chat-link">
+      <span className="editable-label">My chat link</span>
+      <code className="chat-link-url">{link}</code>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        maxLength={300}
+        placeholder="Message typed in for them (optional)"
+        aria-label="Message for the link"
+      />
+      <div className="row-end">
+        <button className="btn btn-ghost" onClick={copy}>
+          <Copy size={16} /> Copy
+        </button>
+        <button className="btn btn-primary" onClick={share}>
+          <Share2 size={16} /> Share
+        </button>
+      </div>
+      <small className="hint">
+        Anyone with it can open a chat with you{user.username ? ` (@${user.username})` : ' (it shows your number)'}. On a phone with ChatApp it opens the app.
+      </small>
+    </div>
+  );
+}
+
 export default function SettingsPanel() {
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
@@ -308,6 +353,9 @@ export default function SettingsPanel() {
 
       <h3 className="section-label">Storage</h3>
       <StorageRow />
+
+      <h3 className="section-label">Chat link</h3>
+      <MyChatLink user={user} />
 
       <h3 className="section-label">Help</h3>
       <div className="settings-group">
