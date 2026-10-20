@@ -274,15 +274,16 @@ export function reveal(m) {
   if (rec?.fp === fp && rec.state === 'ok') return { ...apply(m, payloadOf(rec)), e2eePending: !!rec.pendingFor?.length };
   if (rec?.fp === fp && !TRANSIENT.has(rec.state)) return { ...m, text: '', e2eeState: rec.state };
   enqueue(m);
-  // An edit being decrypted keeps showing the previous version meanwhile.
-  if (rec?.state === 'ok') return apply(m, payloadOf(rec));
+  // An edit being decrypted keeps showing the previous version meanwhile (marked stale).
+  if (rec?.state === 'ok') return { ...apply(m, payloadOf(rec)), e2eeStale: true };
   return { ...m, text: '', e2eeState: rec?.state || 'pending' };
 }
 
 /** Like reveal, but waits (a few seconds at most) for the decryption: new messages, notifications. */
 export function revealNow(m, timeoutMs = 8000) {
   const first = reveal(m);
-  if (first.e2eeState === 'ok' || !m?.e2ee || !session) return Promise.resolve(first);
+  // (Not the previous version of an edit: wait for this one.)
+  if ((first.e2eeState === 'ok' && !first.e2eeStale) || !m?.e2ee || !session) return Promise.resolve(first);
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(reveal(m)), timeoutMs);
     waiting.set(m.id, [...(waiting.get(m.id) || []), () => (clearTimeout(timer), resolve(reveal(m)))]);

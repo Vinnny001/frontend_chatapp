@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Archive, ArchiveRestore, BellOff, Bell, CheckCheck, ChevronDown, Pin, PinOff } from 'lucide-react';
+import { Archive, ArchiveRestore, BellOff, Bell, CheckCheck, ChevronDown, MailOpen, Pin, PinOff } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
@@ -18,6 +18,8 @@ function ConversationItem({ conv, me, active }) {
   const title = conversationTitle(conv, me);
   const last = conv.lastMessage;
   const unread = conv.me?.unreadCount || 0;
+  // Marked unread (by hand, or a message I'd read was edited since): a dot, not a count.
+  const marked = !unread && !!conv.me?.markedUnread;
   const typers = Object.entries(typing || {}).filter(([id]) => id !== me);
 
   let preview;
@@ -56,7 +58,9 @@ function ConversationItem({ conv, me, active }) {
   }
 
   const menuItems = [
-    unread > 0 && { label: 'Mark as read', icon: CheckCheck, onClick: () => markRead(conv.id) },
+    unread > 0 || marked
+      ? { label: 'Mark as read', icon: CheckCheck, onClick: () => markRead(conv.id) }
+      : { label: 'Mark as unread', icon: MailOpen, onClick: () => setPrefs(conv.id, { markedUnread: true }) },
     { label: conv.me?.pinned ? 'Unpin chat' : 'Pin chat', icon: conv.me?.pinned ? PinOff : Pin, onClick: () => setPrefs(conv.id, { pinned: !conv.me?.pinned }) },
     { label: conv.me?.muted ? 'Unmute notifications' : 'Mute notifications', icon: conv.me?.muted ? Bell : BellOff, onClick: () => setPrefs(conv.id, { muted: !conv.me?.muted }) },
     { label: conv.me?.archived ? 'Unarchive chat' : 'Archive chat', icon: conv.me?.archived ? ArchiveRestore : Archive, onClick: () => setPrefs(conv.id, { archived: !conv.me?.archived }) },
@@ -65,7 +69,7 @@ function ConversationItem({ conv, me, active }) {
   return (
     <>
       <div
-        className={`conv-item ${active ? 'active' : ''} ${unread ? 'unread' : ''}`}
+        className={`conv-item ${active ? 'active' : ''} ${unread || marked ? 'unread' : ''}`}
         onClick={() => openConversation(conv.id)}
         onContextMenu={open}
         {...longPress}
@@ -100,6 +104,7 @@ function ConversationItem({ conv, me, active }) {
                 </span>
               )}
               {unread > 0 && <span className="badge">{unread > 99 ? '99+' : unread}</span>}
+              {marked && <span className="badge badge-dot" aria-label="Marked as unread" />}
               <button className="conv-menu-btn" onClick={open} aria-label="Chat options">
                 <ChevronDown size={18} />
               </button>

@@ -77,6 +77,10 @@ final class Notifier {
                 if (!Session.foreground) showMessage(context, data);
                 reportDelivered(context, data); // after showing it, so a slow network never delays it
                 break;
+            case "message_edit":
+                keepForApp(context, data); // (the app gets the new version too)
+                if (!Session.foreground) showEdit(context, data);
+                break;
             case "read":
                 clearConversation(context, data.get("conversationId"));
                 break;
@@ -259,6 +263,47 @@ final class Notifier {
             postChat(context, conversationId, chat, false);
         } catch (Exception ignored) {
             // a broken notification must never crash the push service
+        }
+    }
+
+    /**
+     * A message was edited: its line in the chat's notification shows the new text (decrypted
+     * here), marked ✏️, quietly. If the notification is gone (it had been read), it comes back
+     * with the edit, as the chat is unread again.
+     */
+    private static void showEdit(Context context, Map<String, String> d) {
+        String conversationId = d.get("conversationId");
+        String messageId = d.get("messageId");
+        if (conversationId == null || messageId == null) return;
+        try {
+            String text = "1".equals(d.get("e2ee")) ? BackgroundCrypto.decrypt(context, conversationId, messageId, d.get("message"), 9_000) : null;
+            String shown = "✏️ " + (text != null && !text.isEmpty() ? text : "Edited a message");
+            JSONObject chat = loadChat(context, conversationId);
+            boolean isGroup = "1".equals(d.get("isGroup"));
+            String title = isGroup ? d.get("chatTitle") : Session.nameFor(context, d.get("senderId"), d.get("chatTitle"));
+            chat.put("title", title).put("isGroup", isGroup).put("avatar", d.get("chatAvatar")).put("e2ee", "1".equals(d.get("e2ee")));
+            JSONArray messages = chat.getJSONArray("messages");
+            boolean shownAlready = false;
+            for (int i = 0; i < messages.length(); i++) {
+                JSONObject m = messages.getJSONObject(i);
+                if (messageId.equals(m.optString("id"))) {
+                    m.put("text", shown);
+                    shownAlready = true;
+                }
+            }
+            if (!shownAlready) {
+                messages.put(new JSONObject()
+                    .put("id", messageId)
+                    .put("senderId", d.get("senderId"))
+                    .put("name", Session.nameFor(context, d.get("senderId"), d.get("senderName")))
+                    .put("avatar", d.get("senderAvatar"))
+                    .put("text", shown)
+                    .put("at", System.currentTimeMillis()));
+            }
+            saveChat(context, conversationId, chat);
+            postChat(context, conversationId, chat, shownAlready); // an update of what's shown is silent
+        } catch (Exception ignored) {
+            // never crash the push service
         }
     }
 

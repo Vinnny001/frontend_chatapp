@@ -565,8 +565,9 @@ export const useChat = create((set, get) => {
       const upTo = latest?.createdAt || conv.lastMessage?.createdAt;
       if (!upTo) return;
       const mine = conv.participants.find((p) => p.id === me);
-      if (conv.me.unreadCount === 0 && mine && ts(mine.lastReadAt) >= ts(upTo)) return;
-      patchConversation(convId, (c) => ({ me: { ...c.me, unreadCount: 0, unreadMentions: 0 } }));
+      if (conv.me.unreadCount === 0 && !conv.me.markedUnread && mine && ts(mine.lastReadAt) >= ts(upTo)) return;
+      // (Reading it also clears "marked as unread", here and on the server.)
+      patchConversation(convId, (c) => ({ me: { ...c.me, unreadCount: 0, unreadMentions: 0, markedUnread: false } }));
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
@@ -1096,6 +1097,12 @@ export const useChat = create((set, get) => {
       );
     },
 
+    /** A message I had read was edited: the chat shows as unread again (unless I'm looking at it). */
+    onMarked({ conversationId }) {
+      patchConversation(conversationId, (c) => ({ me: { ...c.me, markedUnread: true } }));
+      if (isViewing(conversationId)) get().markRead(conversationId); // (clears it at once, server too)
+    },
+
     onReceipt({ conversationId, userId, kind, at, unreadCount }) {
       const me = meId();
       patchConversation(conversationId, (c) => ({
@@ -1110,7 +1117,7 @@ export const useChat = create((set, get) => {
         ),
         me:
           userId === me && kind === 'read' && c.me
-            ? { ...c.me, unreadCount, ...(unreadCount === 0 && { unreadMentions: 0 }) }
+            ? { ...c.me, unreadCount, markedUnread: false, ...(unreadCount === 0 && { unreadMentions: 0 }) }
             : c.me,
       }));
     },

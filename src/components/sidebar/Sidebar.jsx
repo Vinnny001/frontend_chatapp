@@ -57,7 +57,7 @@ export default function Sidebar() {
     const q = query.trim().toLowerCase();
     return all
       .filter((c) => (filter === 'archived' ? c.me?.archived : !c.me?.archived))
-      .filter((c) => filter !== 'unread' || c.me?.unreadCount > 0)
+      .filter((c) => filter !== 'unread' || c.me?.unreadCount > 0 || c.me?.markedUnread)
       .filter((c) => filter !== 'groups' || c.type === 'group')
       // Hide empty direct chats (someone opened a chat but nobody has written yet).
       .filter((c) => c.type === 'group' || c.lastMessage || c.id === activeId)

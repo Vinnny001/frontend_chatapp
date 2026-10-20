@@ -150,6 +150,7 @@ export function useRealtime(token) {
 
     socket.on('message:new', (m) => useChat.getState().onMessageNew(m));
     socket.on('message:updated', (p) => useChat.getState().onMessageUpdated(p));
+    socket.on('conversation:marked', (p) => useChat.getState().onMarked(p));
     socket.on('message:removed', (p) => useChat.getState().onMessageRemoved(p));
     socket.on('receipt', (r) => useChat.getState().onReceipt(r));
     socket.on('typing', (t) => useChat.getState().onTyping(t));
