@@ -167,6 +167,7 @@ export async function startOwnDevices() {
     hooks: {
       records: () => [...plain.entries()],
       importRecords: importHistory,
+      statusRecords: currentStatusRecords,
       onContacts: (...args) => appHooks.onContacts(...args),
       ownContacts: () => appHooks.ownContacts(),
     },
@@ -174,6 +175,21 @@ export async function startOwnDevices() {
 }
 
 export const stopOwnDevices = () => stopSync();
+
+/**
+ * The status updates of the last day this device can read (opened now if they weren't yet),
+ * as saved records: a newly linked device of mine gets them with the history.
+ */
+async function currentStatusRecords() {
+  const { mine, others } = await api('/api/status/feed');
+  const out = [];
+  for (const s of [...mine, ...others.flatMap((g) => g.statuses)]) {
+    await statusCrypto.open(session.db, s).catch(() => null);
+    const rec = await session.db.get('plain', `st:${s.id}`);
+    if (rec?.state === 'ok') out.push([`st:${s.id}`, rec]);
+  }
+  return out;
+}
 
 /** History from another of my devices: what it decrypted (I couldn't: I joined later). */
 function importHistory(records) {

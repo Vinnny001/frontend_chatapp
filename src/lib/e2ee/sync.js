@@ -80,7 +80,9 @@ async function handle(body, m) {
     if (await ctx.db.get('kv', `answered:${body.device}`)) return;
     // Linked by scanning its QR code here: seal the history to the key that code carried.
     const sealTo = body.link ? await ctx.db.get('kv', `link:${body.link}`) : null;
-    await sendHistory(body.device, sealTo && { publicKey: sealTo, context: `${body.device}:${body.link}` });
+    // (with the status updates of the last day I can read: it can't, they were sealed before it existed)
+    const statuses = (await ctx.hooks.statusRecords?.().catch(() => [])) || [];
+    await sendHistory(body.device, sealTo && { publicKey: sealTo, context: `${body.device}:${body.link}` }, statuses);
     // and my contacts (it couldn't read what I shared before it joined)
     const last = await ctx.db.get('kv', 'contactsList');
     if (last) await send({ kind: 'contacts', entries: last }).catch(() => {});
@@ -100,11 +102,12 @@ async function handle(body, m) {
  * What I've decrypted from the last 90 days, for a newly linked device of mine. `sealTo`
  * ({ publicKey, context }): it was linked by QR code, so only that device can open it.
  */
-async function sendHistory(to, sealTo) {
+async function sendHistory(to, sealTo, extra = []) {
   const since = Date.now() - HISTORY_DAYS * 24 * 3600 * 1000;
   const records = ctx.hooks
     .records()
-    .filter(([id, rec]) => !id.startsWith('c:') && rec.state === 'ok' && rec.conv && Date.parse(rec.at) >= since && !rec.p?.viewOnce);
+    .filter(([id, rec]) => !id.startsWith('c:') && rec.state === 'ok' && rec.conv && Date.parse(rec.at) >= since && !rec.p?.viewOnce)
+    .concat(extra);
   // In pieces small enough for one message each.
   const parts = [];
   let current = [];

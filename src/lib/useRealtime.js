@@ -36,7 +36,10 @@ export function useRealtime(token) {
     e2ee.setSyncHooks({
       onContacts: (deviceId, entries, at) => applySyncedContacts(userId, deviceId, entries, at),
       ownContacts: () => cachedContactMatches(userId)?.registered || null,
-      onHistory: () => useChat.getState().refreshRevealed(),
+      onHistory: () => {
+        useChat.getState().refreshRevealed();
+        useStatus.getState().reloadSoon(); // status updates that came with it
+      },
     });
     setAddressBookListener((result) => e2ee.shareContacts(result.registered));
     const e2eeReady = e2ee.start({ userId, deviceId: tokenDeviceId(token) }).catch(() => {});
