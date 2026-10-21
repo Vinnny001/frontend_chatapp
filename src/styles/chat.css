@@ -1047,11 +1047,27 @@
   margin: 0 auto;
 }
 
-.attach-bottom input {
+.attach-caption {
   flex: 1 1 260px;
-  height: 46px;
-  background: var(--panel);
-  border-radius: 12px;
+}
+.attach-caption textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 120px;
+  resize: none;
+  padding: 11px 14px;
+  border-radius: 22px;
+  line-height: 1.4;
+  font-size: 15px;
+}
+.attach-caption textarea:focus {
+  border-color: transparent;
+}
+.attach-mentions {
+  flex: 1 0 100%;
+}
+.attach-mentions .mention-picker {
+  margin: 0;
 }
 
 .attach-thumbs {
@@ -1427,6 +1443,15 @@ button.file-card {
   max-height: 100%;
   object-fit: contain;
   pointer-events: auto;
+}
+.view-once-caption {
+  margin: 0;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 .once-toggle {
   display: grid;

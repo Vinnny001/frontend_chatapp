@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useChat } from '../../store/chat.js';
 import { useUI } from '../../store/ui.js';
+import { useAuth } from '../../store/auth.js';
+import { plainMentions } from '../../lib/mentions.js';
 
 /** The ① badge used for view-once media. */
 export function OnceIcon({ size = 18 }) {
@@ -42,9 +44,11 @@ export function ViewOnceBody({ msg, conv, me }) {
   );
 }
 
-/** Full screen, straight from the server (never saved on the phone); gone once closed. */
+/** Full screen, straight from the server (never saved on the phone), with its caption; gone once closed. */
 export function ViewOnceViewer() {
   const item = useUI((s) => s.viewOnce);
+  const conv = useChat((s) => item && s.conversations[item.conversationId]);
+  const me = useAuth((s) => s.user?.id);
   const close = () => {
     if (item?.url?.startsWith('blob:')) URL.revokeObjectURL(item.url); // the decrypted copy is gone
     useUI.getState().setViewOnce(null);
@@ -72,6 +76,7 @@ export function ViewOnceViewer() {
           <img src={item.url} alt="" draggable={false} />
         )}
       </div>
+      {item.text && <p className="view-once-caption">{conv ? plainMentions(item.text, conv, me) : item.text}</p>}
     </div>,
     document.body
   );

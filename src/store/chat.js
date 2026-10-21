@@ -916,10 +916,10 @@ export const useChat = create((set, get) => {
           const blob = await decryptToBlob(await res.arrayBuffer(), msg.media);
           e2ee.forgetViewOnceKey(msg.id);
           patchItem(msg.conversationId, msg.id, { media: { ...msg.media, key: null, iv: null } });
-          useUI.getState().setViewOnce({ url: URL.createObjectURL(blob), type: msg.type });
+          useUI.getState().setViewOnce({ url: URL.createObjectURL(blob), type: msg.type, text: msg.text, conversationId: msg.conversationId });
           return;
         }
-        useUI.getState().setViewOnce({ url, type });
+        useUI.getState().setViewOnce({ url, type, text: msg.text, conversationId: msg.conversationId });
       } catch (e) {
         if (e.status === 410) patchItem(msg.conversationId, msg.id, { openedBy: [...new Set([...(msg.openedBy || []), meId()])] });
         toast(e.message, 'error');

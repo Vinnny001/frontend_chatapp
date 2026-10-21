@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileText, Send, X } from 'lucide-react';
 import { fileKind, formatBytes } from '../../lib/format.js';
 import { OnceIcon } from './ViewOnce.jsx';
+import { useMentions } from './useMentions.jsx';
 
-export default function AttachmentPreview({ files, onCancel, onSend }) {
+export default function AttachmentPreview({ files, conv, me, onCancel, onSend }) {
   const [caption, setCaption] = useState('');
+  const input = useRef(null);
+  const backdrop = useRef(null);
+  // @mentions in the caption, as in the message box.
+  const mentions = useMentions({ conv, me, text: caption, update: setCaption, input });
   const [index, setIndex] = useState(0);
   const [viewOnce, setViewOnce] = useState(false);
   // Made and revoked in the same effect, so a re-run (React dev mode) never leaves dead previews.
@@ -17,9 +22,17 @@ export default function AttachmentPreview({ files, onCancel, onSend }) {
 
   const file = files[index];
   const kind = fileKind(file);
-  // View once: a single photo or video, without a caption (as on WhatsApp).
+  // View once: a single photo or video (its caption, mentions too, still goes with it).
   const canViewOnce = files.length === 1 && (kind === 'image' || kind === 'video');
-  const send = () => onSend(files, viewOnce ? '' : caption.trim(), { viewOnce: canViewOnce && viewOnce });
+  const send = () => onSend(files, mentions.withTokens(caption.trim()), { viewOnce: canViewOnce && viewOnce });
+
+  // Grow with the caption, up to a few lines.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [caption]);
 
   return (
     <div className="attach-preview">
@@ -41,15 +54,37 @@ export default function AttachmentPreview({ files, onCancel, onSend }) {
         )}
       </div>
       <div className="attach-bottom">
-        <input
-          autoFocus
-          value={viewOnce ? '' : caption}
-          disabled={viewOnce}
-          onChange={(e) => setCaption(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
-          placeholder={viewOnce ? 'View once: can be opened one time' : 'Add a caption…'}
-          maxLength={2000}
-        />
+        {mentions.picker && <div className="attach-mentions">{mentions.picker}</div>}
+        <div className="composer-field attach-caption">
+          <div ref={backdrop} className="composer-highlight" aria-hidden="true">
+            {mentions.highlighted}
+            {'​'}
+          </div>
+          <textarea
+            ref={input}
+            rows={1}
+            autoFocus
+            value={caption}
+            onChange={(e) => {
+              setCaption(e.target.value);
+              mentions.find(e.target.value, e.target.selectionStart);
+            }}
+            onScroll={(e) => {
+              if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+            }}
+            onBlur={() => setTimeout(mentions.close, 150)}
+            onKeyDown={(e) => {
+              if (mentions.onKeyDown(e)) return;
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder={viewOnce ? 'Add a caption… (view once)' : 'Add a caption…'}
+            maxLength={2000}
+            aria-label="Caption"
+          />
+        </div>
         {canViewOnce && (
           <button
             type="button"
