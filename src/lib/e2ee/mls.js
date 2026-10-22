@@ -192,6 +192,14 @@ async function saveGroup(convId, g) {
   await ctx.db.put('groups', convId, { bytes: M.encodeGroupState(g.state), meta: g.meta });
 }
 
+/**
+ * Whether the server tells us about this chat within `ms` (then cached for encrypting). False
+ * when it's asleep or out of reach: the notification reply is encrypted offline then.
+ */
+export function serverAnswers(convId, ms) {
+  return Promise.race([rosterInfo(convId).then(() => true, () => false), sleep(ms).then(() => false)]);
+}
+
 /** The chat's encryption status and devices (cached briefly; dropped when devices change). */
 async function rosterInfo(convId, { fresh = false } = {}) {
   const hit = rosters.get(convId);

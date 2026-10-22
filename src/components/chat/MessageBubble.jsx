@@ -93,21 +93,24 @@ function RichText({ text, conv, me }) {
             {
               label: 'View profile',
               icon: Info,
-              onClick: async () => {
-                try {
-                  const { conversation } = await api('/api/conversations/direct', { method: 'POST', body: { userId: menu.id } });
-                  useChat.getState().upsertConversation(conversation);
-                  useUI.getState().setProfilePreview(conversation.id);
-                } catch (err) {
-                  toast(err.message, 'error');
-                }
-              },
+              onClick: () => openProfile(menu.id),
             },
           ]}
         />
       )}
     </>
   );
+}
+
+/** Someone's profile card (as from their photo in a group, like WhatsApp). */
+async function openProfile(userId) {
+  try {
+    const { conversation } = await api('/api/conversations/direct', { method: 'POST', body: { userId } });
+    useChat.getState().upsertConversation(conversation);
+    useUI.getState().setProfilePreview(conversation.id);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 function Linked({ text }) {
@@ -581,6 +584,22 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
     >
       {selecting && (
         <span className={`msg-check ${selected ? 'on' : ''}`} role="checkbox" aria-checked={selected} aria-label="Select message" />
+      )}
+      {!mine && conv.type === 'group' && (
+        // The sender's photo beside the first of their messages in a row, as on WhatsApp.
+        <span className="msg-avatar">
+          {!grouped && sender && (
+            <Avatar
+              name={sender.name}
+              url={sender.avatarUrl}
+              size={30}
+              onClick={(e) => {
+                e.stopPropagation();
+                openProfile(sender.id);
+              }}
+            />
+          )}
+        </span>
       )}
       <div className="msg-stack" style={dx ? { transform: `translateX(${dx}px)` } : undefined}>
         <div

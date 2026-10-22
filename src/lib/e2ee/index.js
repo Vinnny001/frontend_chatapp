@@ -428,6 +428,21 @@ export async function willEncrypt(convId) {
  * Saves what I sent (by clientId now, by message id once the server confirms it). `missing`:
  * members it couldn't reach yet (they had no device); it's sent again when they have one.
  */
+export const serverAnswers = (convId, ms) => (session ? mls.serverAnswers(convId, ms) : Promise.resolve(false));
+
+/**
+ * A message the phone's background sender delivered (a reply typed in a notification): kept
+ * under its id like any sent message, so it's sent again to devices that couldn't read it.
+ */
+export async function adoptSent(message) {
+  if (!session || !message?.id || !message.clientId || plain.get(message.id)?.state === 'ok') return;
+  const key = `c:${message.clientId}`;
+  const rec = plain.get(key) || (await session.db.get('plain', key).catch(() => null));
+  if (rec?.state !== 'ok') return;
+  remember(message.id, { ...rec, at: message.createdAt });
+  if (rec.pendingFor?.length) resendSoon();
+}
+
 export function rememberSent(key, payload, ciphertext, where = {}, missing = []) {
   const pendingFor = missing || []; // (unknown when encrypted offline)
   remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where, ...(pendingFor.length && { pendingFor }) });

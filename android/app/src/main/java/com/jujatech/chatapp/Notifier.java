@@ -374,7 +374,8 @@ final class Notifier {
     }
 
     /** Adds my reply (from the notification's Reply box) to the chat's notification, silently. */
-    static void appendOwnReply(Context context, String conversationId, String text) {
+    static synchronized void appendOwnReply(Context context, String conversationId, String text) {
+        // (synchronized: two quick replies both stay in the notification)
         try {
             JSONObject chat = loadChat(context, conversationId);
             chat.getJSONArray("messages").put(new JSONObject()

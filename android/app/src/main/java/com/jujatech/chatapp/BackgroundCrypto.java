@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * End-to-end encryption for notifications while ChatApp isn't open (as on WhatsApp): the real
- * text of a new message, and replies typed in the notification. Messages are encrypted by the
+ * text of a new message, and replies typed in the notification (encrypted here, sent by the outbox). Messages are encrypted by the
  * app's web code, so a hidden WebView loads its encryption-only page (bg.html) from the app's
  * own files at https://localhost, the same origin as the app: it uses this device's keys, and
  * saves what it decrypts for the app. The WebView is made on first use and closed when idle.
@@ -61,11 +61,10 @@ final class BackgroundCrypto {
         return r != null && r.optBoolean("ok") ? r.optString("text", null) : null;
     }
 
-    /** Encrypts and sends a reply from a notification. Null when sent, else why it wasn't. */
-    static String reply(Context context, String conversationId, String text, long timeoutMs) {
-        JSONObject r = call(context, timeoutMs, "reply", conversationId, text);
-        if (r == null) return "timed out";
-        return r.optBoolean("ok") ? null : r.optString("error", "failed");
+    /** Encrypts a reply from a notification: the message to send (JSON), or null (try again). */
+    static String encryptReply(Context context, String conversationId, String text, String clientId, long timeoutMs) {
+        JSONObject r = call(context, timeoutMs, "encryptReply", conversationId, text, clientId);
+        return r != null && r.optBoolean("ok") ? r.optString("body", null) : null;
     }
 
     /** Runs window.__bg.<method>(id, ...args) and waits for its answer (null on timeout). */

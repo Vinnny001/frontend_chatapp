@@ -55,7 +55,11 @@ public class OutboxWorker extends Worker {
     @NonNull
     @Override
     public ForegroundInfo getForegroundInfo() {
-        Context context = getApplicationContext();
+        return sendingForeground(getApplicationContext());
+    }
+
+    /** (Also for ReplyWorker.) */
+    static ForegroundInfo sendingForeground(Context context) {
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(SENDING_CHANNEL) == null) {
             NotificationChannel channel = new NotificationChannel(SENDING_CHANNEL, "Sending messages", NotificationManager.IMPORTANCE_LOW);
@@ -111,14 +115,28 @@ public class OutboxWorker extends Worker {
             return Result.success();
         } catch (PermanentFailure e) {
             // The message stays marked unsent in the app, where the user can retry or delete it.
-            OutboxPlugin.forget(context, id);
+            giveUp(context, id);
             return Result.failure();
         } catch (IOException e) {
             return retryOrGiveUp(context, id); // network dropped again; WorkManager retries with backoff
         } catch (Exception e) {
-            OutboxPlugin.forget(context, id);
+            giveUp(context, id);
             return Result.failure();
         }
+    }
+
+    /** Drops the job; a notification reply says in its notification that it wasn't sent. */
+    private static void giveUp(Context context, String id) {
+        String stored = OutboxPlugin.prefs(context).getString(id, null);
+        try {
+            JSONObject job = stored == null ? null : new JSONObject(stored);
+            if (job != null && job.has("replyConversation")) {
+                Notifier.appendOwnReply(context, job.getString("replyConversation"), ReplyWorker.notSent(job.optString("replyText")));
+            }
+        } catch (Exception ignored) {
+            // nothing to say
+        }
+        OutboxPlugin.forget(context, id);
     }
 
     /** multipart/form-data upload of the queued file; returns { url, name, size, mime }. */
@@ -191,7 +209,7 @@ public class OutboxWorker extends Worker {
 
     private Result retryOrGiveUp(Context context, String id) {
         if (getRunAttemptCount() >= MAX_ATTEMPTS) {
-            OutboxPlugin.forget(context, id);
+            giveUp(context, id);
             return Result.failure();
         }
         return Result.retry();

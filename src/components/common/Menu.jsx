@@ -48,7 +48,7 @@ export default function Menu({ x, y, items, onClose, header }) {
         <button
           key={item.label}
           role="menuitem"
-          className={`menu-item ${item.danger ? 'danger' : ''}`}
+          className={`menu-item ${item.danger ? 'danger' : ''} ${item.className || ''}`}
           onClick={() => {
             onClose();
             item.onClick();

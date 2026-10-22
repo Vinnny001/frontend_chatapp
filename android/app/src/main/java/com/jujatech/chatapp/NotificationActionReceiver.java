@@ -35,36 +35,37 @@ public class NotificationActionReceiver extends BroadcastReceiver {
             return;
         }
 
-        String reply = null;
         if (REPLY.equals(action)) {
             Bundle input = RemoteInput.getResultsFromIntent(intent);
             CharSequence text = input == null ? null : input.getCharSequence(Notifier.REPLY_KEY);
-            if (text == null || text.toString().trim().isEmpty()) return;
-            reply = text.toString().trim();
+            if (text == null || text.toString().trim().isEmpty() || conversationId == null || Session.token(context) == null) return;
+            String reply = text.toString().trim();
+            // Shown at once (the box is ready for the next reply); encrypted and sent in the
+            // background, retried until it's in (see ReplyWorker).
+            ReplyWorker.enqueue(context, conversationId, reply);
+            final PendingResult shown = goAsync();
+            new Thread(() -> {
+                try {
+                    Notifier.appendOwnReply(context, conversationId, reply); // (may fetch a photo)
+                } finally {
+                    shown.finish();
+                }
+            }).start();
+            return;
         }
         // Update the screen at once; the network work finishes in the background.
         if (READ.equals(action)) Notifier.clearConversation(context, conversationId);
         if (DECLINE.equals(action)) Notifier.cancelCall(context, callId);
 
-        final String replyText = reply;
         final PendingResult pending = goAsync();
         new Thread(() -> {
             try {
-                if (REPLY.equals(action)) sendReply(context, conversationId, replyText);
-                else if (READ.equals(action)) markRead(context, conversationId);
+                if (READ.equals(action)) markRead(context, conversationId);
                 else if (DECLINE.equals(action)) decline(context, callId);
             } finally {
                 pending.finish();
             }
         }).start();
-    }
-
-    /** Every message is end-to-end encrypted: the reply is encrypted on this phone, then sent. */
-    private static void sendReply(Context context, String conversationId, String text) {
-        if (Session.token(context) == null || conversationId == null) return;
-        // (goAsync allows about 10 seconds.)
-        String error = BackgroundCrypto.reply(context, conversationId, text, 9_000);
-        Notifier.appendOwnReply(context, conversationId, error == null ? text : "Not sent: open ChatApp to send “" + text + "”");
     }
 
     private static void markRead(Context context, String conversationId) {

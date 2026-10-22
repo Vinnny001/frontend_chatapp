@@ -75,6 +75,38 @@
 
   .chat-header {
     padding-left: 4px;
+    gap: 0;
+  }
+}
+
+/* Search is in the ⋮ menu on phones; elsewhere it has its own button. */
+.menu-item.menu-narrow-only {
+  display: none;
+}
+@media (max-width: 600px) {
+  .header-search {
+    display: none;
+  }
+  .menu-item.menu-narrow-only {
+    display: flex;
+  }
+  .chat-header-main {
+    gap: 8px;
+    padding: 2px 4px;
+  }
+  .chat-header .icon-btn {
+    width: 38px;
+    min-width: 38px;
+  }
+  /* Last seen / members can take a second line instead of being cut off. */
+  .chat-header .chat-subtitle {
+    font-size: 12px;
+    line-height: 1.3;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -244,6 +276,17 @@
 
 .msg-row.out {
   justify-content: flex-end;
+}
+
+/* Groups: the sender's photo beside their first message in a row (space kept under it). */
+.msg-avatar {
+  flex: 0 0 30px;
+  width: 30px;
+  margin-right: 6px;
+  align-self: flex-start;
+}
+.msg-avatar .avatar {
+  cursor: pointer;
 }
 
 .msg-stack {

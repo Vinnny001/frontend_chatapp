@@ -84,7 +84,8 @@ export default function ChatHeader({ conv }) {
           </button>
         </>
       )}
-      <button className="icon-btn" onClick={() => setInfoOpen(infoOpen === 'search' ? false : 'search')} aria-label="Search in chat" title="Search">
+      {/* (On phones Search is in the ⋮ menu, as on WhatsApp, leaving room for the name and last seen.) */}
+      <button className="icon-btn header-search" onClick={() => setInfoOpen(infoOpen === 'search' ? false : 'search')} aria-label="Search in chat" title="Search">
         <Search size={20} />
       </button>
       <button
@@ -104,6 +105,7 @@ export default function ChatHeader({ conv }) {
           onClose={() => setMenu(null)}
           items={[
             { label: conv.type === 'group' ? 'Group info' : peer ? 'Contact info' : 'Chat info', icon: Info, onClick: () => setInfoOpen('info') },
+            { label: 'Search', icon: Search, className: 'menu-narrow-only', onClick: () => setInfoOpen('search') },
             conv.type === 'group' && conv.me?.role === 'admin' && { label: 'Group dashboard', icon: BarChart3, onClick: () => setInfoOpen('dashboard') },
             { label: 'Disappearing messages', icon: Timer, onClick: () => setInfoOpen('info') },
             {

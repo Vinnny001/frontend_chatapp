@@ -40,6 +40,14 @@ const voteSeq = new Map(); // poll message id -> latest vote request number
 const typingTimers = new Map();
 // clientIds currently being sent, so a retry never runs twice in parallel.
 const inFlight = new Set();
+// Per chat: messages are encrypted and sent one at a time, in the order they were written (when
+// the first ones wait for the chat's encryption to be set up, the rest can't overtake them).
+const sendChains = new Map();
+function inOrder(convId, fn) {
+  const run = (sendChains.get(convId) || Promise.resolve()).then(fn, fn);
+  sendChains.set(convId, run.catch(() => {}));
+  return run;
+}
 
 const isOnline = () => !!getSocket()?.connected;
 const authToken = () => useAuth.getState().token;
@@ -732,13 +740,15 @@ export const useChat = create((set, get) => {
           deleteStoredMedia(pendingKey(msg.clientId));
           patchItem(convId, msg.clientId, { needsUpload: false, remoteMedia });
         }
-        if (encrypt) {
-          const out = await encryptOut(current());
-          if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
-        }
-
-        const sent = current();
-        const { message } = await emitAck('message:send', { conversationId: convId, ...sendPayload(sent) }, 20000);
+        const { sent, message } = await inOrder(convId, async () => {
+          if (encrypt) {
+            const out = await encryptOut(current());
+            if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
+          }
+          const ready = current();
+          const ack = await emitAck('message:send', { conversationId: convId, ...sendPayload(ready) }, 20000);
+          return { sent: ready, message: ack.message };
+        });
         if (sent.e2eeOut) e2ee.rememberSent(message.id, sent.e2eeOut.payload, sent.e2eeOut.ciphertext, { conv: convId, sender: meId(), at: message.createdAt }, sent.e2eeOut.missing);
         cancelBackground(msg.clientId);
         saveMessages([e2ee.reveal(message)]);
@@ -777,6 +787,7 @@ export const useChat = create((set, get) => {
           c.lastMessage?.clientId === message.clientId ? { lastMessage: message, lastMessageAt: message.createdAt } : {}
         );
         saveMessages([e2ee.reveal(message)]);
+        e2ee.adoptSent(message).catch(() => {});
         // Then move our copy of the file under its real URL, so it never needs downloading.
         const clientId = message.clientId;
         pendingFiles.delete(clientId);

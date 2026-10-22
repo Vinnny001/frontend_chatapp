@@ -3,7 +3,8 @@
 // a reply is typed in a notification, while ChatApp itself isn't open. It shares the app's
 // storage (same origin), so it uses this device's keys and saves what it decrypts for the app.
 //
-// Native calls window.__bg.decrypt / reply and gets the answer through ChatAppBg.done(id, json).
+// Native calls window.__bg.decrypt / encryptReply and gets the answer through ChatAppBg.done(id, json).
+// A reply is only encrypted here: the phone's outbox sends it, and keeps trying until it's in.
 
 import { api, setApiToken } from './lib/api.js';
 import { storage } from './lib/storage.js';
@@ -71,22 +72,25 @@ window.__bg = {
     }
   },
 
-  /** A reply typed in the notification: encrypted here and sent. → { ok } or { ok: false, error }. */
-  async reply(id, conversationId, text) {
+  /**
+   * A reply typed in the notification, encrypted here (`clientId` is the phone's, so a repeat is
+   * never sent twice). → { ok, body } (what to send) or { ok: false, error }.
+   */
+  async encryptReply(id, conversationId, text, clientId) {
     try {
       const user = await ensure();
       const payload = { type: 'text', text };
-      const out = await e2ee.encryptMessage(conversationId, payload);
+      // With the server's view of the chat when it answers quickly; else (asleep, out of reach)
+      // with this phone's keys as they are: it still reads fine, and waits in the outbox.
+      const online = await e2ee.serverAnswers(conversationId, 4000);
+      let out = online ? await e2ee.encryptMessage(conversationId, payload).catch(() => null) : null;
+      out ||= await e2ee.encryptMessage(conversationId, payload, { offline: true });
       if (!out) throw new Error('Couldn’t encrypt the reply');
-      const clientId = `n${crypto.randomUUID().replace(/-/g, '')}`;
-      const body = sendPayload({ clientId, e2eeOut: { ...out, payload } });
-      // Saved before it's sent: the app (if it's running) may get the message first.
-      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: conversationId, sender: user.id, at: new Date().toISOString() });
-      const { message } = await api(`/api/conversations/${conversationId}/messages`, { method: 'POST', body });
       // Kept like any message sent from the app (a sender can't decrypt its own message).
-      e2ee.rememberSent(message.id, payload, out.ciphertext, { conv: conversationId, sender: user.id, at: message.createdAt }, out.missing);
-      answer(id, { ok: true });
+      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: conversationId, sender: user.id, at: new Date().toISOString() }, out.missing);
+      answer(id, { ok: true, body: JSON.stringify(sendPayload({ clientId, e2eeOut: { ...out, payload } })) });
     } catch (err) {
+      console.warn('[bg] reply not encrypted', err?.message || err);
       answer(id, { ok: false, error: String(err?.message || err) });
     }
   },
