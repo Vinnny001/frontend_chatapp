@@ -2938,3 +2938,89 @@ button.composer-locked.blocked {
   font-size: 13px;
   word-break: break-all;
 }
+
+/* ---------- export chats ---------- */
+.export-dialog .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.export-chat-name {
+  margin: 0;
+  font-weight: 600;
+}
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.export-range {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.export-range label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+  flex: 1 1 140px;
+}
+.export-list {
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.export-row:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.04));
+}
+.export-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.export-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ---------- groups in common ---------- */
+.groups-in-common .link-btn {
+  margin: 4px 0 0 4px;
+}
+.profile-preview-common {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- chat backup ---------- */
+.backup-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}

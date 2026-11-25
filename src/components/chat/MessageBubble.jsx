@@ -28,6 +28,7 @@ import {
   StarOff,
   Trash2,
   Video,
+  Share2,
 } from 'lucide-react';
 import Ticks from '../common/Ticks.jsx';
 import Menu, { useContextMenu } from '../common/Menu.jsx';
@@ -39,7 +40,8 @@ import Modal from '../common/Modal.jsx';
 import { useAuth } from '../../store/auth.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
-import { mediaKind, useMediaSrc } from '../../lib/media.js';
+import { ensureMedia, mediaKind, useIsStored, useMediaSrc } from '../../lib/media.js';
+import { shareFile } from '../../lib/share.js';
 import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
 import { canSendIn, callSummary, isCallMessage, messageStatus, peerOf, useChat } from '../../store/chat.js';
@@ -111,6 +113,22 @@ async function openProfile(userId) {
   } catch (err) {
     toast(err.message, 'error');
   }
+}
+
+/** A photo, video, voice note or document from a chat, to another app (WhatsApp, Gmail...). */
+async function shareMedia(msg) {
+  const { media } = msg;
+  try {
+    const blob = String(media.url).startsWith('blob:') ? await fetch(media.url).then((r) => r.blob()) : await ensureMedia(media.url);
+    if (!blob) return toast('Couldn’t download it. Check your connection.', 'error');
+    const ext = { image: 'jpg', video: 'mp4', voice: 'webm', audio: 'mp3' }[msg.type] || 'bin';
+    const name = media.name || `ChatApp ${msg.type} ${msg.createdAt.slice(0, 10)}.${ext}`;
+    const typed = blob.type ? blob : new Blob([blob], { type: media.mime || 'application/octet-stream' });
+    await shareFile(typed, name, { title: 'Share' });
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+  return undefined;
 }
 
 function Linked({ text }) {
@@ -268,9 +286,13 @@ function VisualMedia({ msg, uploading }) {
   return <audio className="audio-player" src={src} controls preload="metadata" />;
 }
 
-/** Tap to open in the phone's document app, from the saved copy (works offline). */
+/**
+ * Tap to open in the phone's document app, from the saved copy (works offline). The download
+ * arrow shows only until it's saved on this device.
+ */
 function DocumentCard({ media, uploadingProgress }) {
   const [opening, setOpening] = useState(false);
+  const stored = useIsStored(media.url);
   async function open(e) {
     e.stopPropagation();
     if (opening) return;
@@ -294,11 +316,13 @@ function DocumentCard({ media, uploadingProgress }) {
           {uploadingProgress != null
             ? `Uploading ${Math.round(uploadingProgress * 100)}%`
             : opening
-              ? 'Opening…'
+              ? stored
+                ? 'Opening…'
+                : 'Downloading…'
               : `${formatBytes(media.size)} · ${apk ? 'Android app' : ext}`}
         </span>
       </span>
-      <Download size={18} />
+      {!stored && uploadingProgress == null && <Download size={18} className={opening ? 'pulse' : ''} aria-label="Not downloaded" />}
     </button>
   );
 }
@@ -518,6 +542,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             onClick: () => navigator.clipboard?.writeText(plainMentions(msg.text, conv, me)).then(() => toast('Copied'), () => toast('Could not copy')),
           },
           !special && { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
+          !special && hasMedia && { label: 'Share', icon: Share2, onClick: () => shareMedia(msg) },
           { label: msg.starred ? 'Unstar' : 'Star', icon: msg.starred ? StarOff : Star, onClick: () => chat.toggleStar(msg) },
           canSendIn(conv, me) && !conv.me?.blocked && {
             label: pinned ? 'Unpin' : 'Pin',

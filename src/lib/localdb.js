@@ -93,6 +93,23 @@ export async function readMessages(conversationId, { before, limit = 40 } = {}) 
   return out.reverse();
 }
 
+/** Time of the oldest message of a chat saved on the device, or null. */
+export async function oldestStoredAt(conversationId) {
+  const d = await db();
+  if (!d) return null;
+  const range = IDBKeyRange.bound([conversationId, ''], [conversationId, '￿']);
+  const cursor = await d.transaction('messages').store.index('byConv').openCursor(range, 'next');
+  return cursor?.value.createdAt || null;
+}
+
+/** Every message of a chat saved on the device (oldest first), optionally within [from, to]. */
+export async function allStoredMessages(conversationId, { from = '', to = '￿' } = {}) {
+  const d = await db();
+  if (!d) return [];
+  const range = IDBKeyRange.bound([conversationId, from], [conversationId, to]);
+  return d.transaction('messages').store.index('byConv').getAll(range);
+}
+
 // ------------------------------------------------------------------ media
 
 export async function getStoredMedia(url) {
@@ -115,10 +132,18 @@ export async function deleteStoredMedia(url) {
   if (d && url) await d.delete('media', url).catch(() => {});
 }
 
+// Told when a file is saved on the device (a document shows as downloaded at once).
+const storedListeners = new Set();
+export function onMediaStored(fn) {
+  storedListeners.add(fn);
+  return () => storedListeners.delete(fn);
+}
+
 export async function putStoredMedia(url, blob) {
   const d = await db();
   if (!d || !url || !blob) return;
   await d.put('media', { url, blob, size: blob.size, usedAt: Date.now() }).catch(() => {});
+  for (const fn of storedListeners) fn(url);
   evictMedia();
 }
 
@@ -158,8 +183,9 @@ async function evictMedia() {
     const index = tx.store.index('byUsed');
     let total = 0;
     for (let c = await index.openCursor(); c; c = await c.continue()) total += c.value.size || 0;
-    // Oldest-viewed first.
+    // Oldest-viewed first (files waiting to be sent are never removed).
     for (let c = await index.openCursor(); c && total > MEDIA_BUDGET_BYTES; c = await c.continue()) {
+      if (String(c.key).startsWith('pending:')) continue;
       total -= c.value.size || 0;
       c.delete();
     }

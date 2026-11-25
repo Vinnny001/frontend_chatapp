@@ -32,6 +32,8 @@ export const useUI = create((set, get) => ({
   sounds: storage.get('ui.sounds', true),
   // Which media downloads automatically (so it's available offline), per connection type.
   autoDownloadRules: storage.get('ui.autoDownloadRules', DEFAULT_AUTO_DOWNLOAD),
+  // Keep every chat's whole history on the device (read offline). On by default.
+  saveOffline: storage.get('ui.saveOffline', true),
   // Sidebar overlay panels: newChat | newGroup | settings | starred | profile
   panel: null,
   infoOpen: false,

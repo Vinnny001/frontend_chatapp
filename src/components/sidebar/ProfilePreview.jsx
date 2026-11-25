@@ -5,7 +5,7 @@ import { initials } from '../../lib/format.js';
 import { useMediaSrc } from '../../lib/media.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { chatAvatarUrl, conversationTitle, isSelfChat, peerOf, useChat } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, groupsInCommon, isSelfChat, peerOf, useChat } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 
 /**
@@ -19,6 +19,7 @@ export default function ProfilePreview() {
   const close = () => useUI.getState().setProfilePreview(null);
   const url = conv ? chatAvatarUrl(conv, me) : null;
   const { src } = useMediaSrc(url);
+  const conversations = useChat((s) => s.conversations);
 
   useEffect(() => {
     if (!convId) return undefined;
@@ -32,6 +33,7 @@ export default function ProfilePreview() {
   const group = conv.type === 'group';
   const self = isSelfChat(conv, me);
   const peer = peerOf(conv, me);
+  const common = !group && !self && peer ? groupsInCommon(conversations, peer.id) : [];
   const { openConversation } = useChat.getState();
   const ui = useUI.getState();
 
@@ -81,6 +83,22 @@ export default function ProfilePreview() {
           )}
           <span className="profile-preview-name">{title}</span>
         </button>
+        {common.length > 0 && (
+          <button
+            className="profile-preview-common"
+            onClick={act(() => {
+              openConversation(conv.id);
+              ui.setInfoOpen('info');
+            })}
+          >
+            <Users size={16} /> {common.length} {common.length === 1 ? 'group' : 'groups'} in common:{' '}
+            {common
+              .slice(0, 3)
+              .map((g) => g.name)
+              .join(', ')}
+            {common.length > 3 ? '…' : ''}
+          </button>
+        )}
         <div className="profile-preview-actions">
           {actions.map(({ label, icon: Icon, onClick }) => (
             <button key={label} onClick={onClick} aria-label={label} title={label}>

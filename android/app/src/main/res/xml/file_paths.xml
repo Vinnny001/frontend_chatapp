@@ -4,4 +4,6 @@
     <cache-path name="my_cache_images" path="." />
     <!-- Chat documents handed to other apps (PDF/Word viewers) when opened -->
     <files-path name="chat_documents" path="docs/" />
+    <!-- Files shared to other apps (WhatsApp, Gmail, Drive...) and chat exports -->
+    <files-path name="shared_files" path="share/" />
 </paths>

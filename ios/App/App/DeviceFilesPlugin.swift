@@ -38,6 +38,7 @@ public class DeviceFilesPlugin: CAPPlugin, CAPBridgedPlugin, QLPreviewController
         CAPPluginMethod(name: "stat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "remove", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
     ]
 
     private var previewURL: URL?
@@ -106,6 +107,31 @@ public class DeviceFilesPlugin: CAPPlugin, CAPBridgedPlugin, QLPreviewController
             let preview = QLPreviewController()
             preview.dataSource = self
             self.bridge?.viewController?.present(preview, animated: true)
+            call.resolve()
+        }
+    }
+
+    /// Hands a saved file to another app (share sheet: WhatsApp, Mail, Save to Files...).
+    @objc func share(_ call: CAPPluginCall) {
+        let url: URL
+        do {
+            url = try AppFiles.resolve(call.getString("path"))
+        } catch {
+            call.reject("Could not share file", nil, error)
+            return
+        }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            call.reject("File not found")
+            return
+        }
+        DispatchQueue.main.async {
+            guard let presenter = self.bridge?.viewController else {
+                call.reject("Could not share file")
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            sheet.popoverPresentationController?.sourceView = presenter.view // iPad
+            presenter.present(sheet, animated: true)
             call.resolve()
         }
     }

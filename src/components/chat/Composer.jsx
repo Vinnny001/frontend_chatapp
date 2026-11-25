@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart3, Camera, Check, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
+import { BarChart3, Camera, Check, Clock, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
 import EmojiPicker from './EmojiPicker.jsx';
 import AttachmentPreview from './AttachmentPreview.jsx';
 import Menu from '../common/Menu.jsx';
 import { PollComposer } from './Poll.jsx';
+import { ScheduleDialog, ScheduledBar } from './Scheduled.jsx';
 import { MENTION_TOKEN, mentionName, plainMentions } from '../../lib/mentions.js';
 import { useMentions } from './useMentions.jsx';
 import { fileKind, formatDuration } from '../../lib/format.js';
@@ -85,6 +86,8 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   const [attachMenu, setAttachMenu] = useState(null);
   const [files, setFiles] = useState(null);
   const [pollOpen, setPollOpen] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const sendHold = useRef(null);
   const input = useRef(null);
   const fileInputs = { media: useRef(null), doc: useRef(null), camera: useRef(null) };
   const typing = useRef({ last: 0, idle: null });
@@ -261,6 +264,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
 
   return (
     <div className="composer-wrap">
+      {!editing && <ScheduledBar conv={conv} me={me} />}
       {privateReply && !editing && (
         <div className="composer-context">
           <Reply size={18} />
@@ -328,7 +332,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
                 aria-label="Attach"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  setAttachMenu({ x: r.left, y: r.top - 215 });
+                  setAttachMenu({ x: r.left, y: r.top - 260 });
                 }}
               >
                 <Paperclip size={21} />
@@ -366,7 +370,36 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
             <Send size={20} />
           </button>
         ) : text.trim() ? (
-          <button className="send-btn" onClick={submit} aria-label={editing ? 'Save edit' : 'Send'}>
+          <button
+            className="send-btn"
+            onClick={() => {
+              if (sendHold.current === 'held') {
+                sendHold.current = null;
+                return; // (it was a long press: the schedule dialog is open)
+              }
+              submit();
+            }}
+            // Long-press (or right-click) Send: schedule it instead.
+            onContextMenu={(e) => {
+              if (editing) return;
+              e.preventDefault();
+              setScheduling(true);
+            }}
+            onPointerDown={() => {
+              if (editing) return;
+              clearTimeout(sendHold.timer);
+              sendHold.current = null;
+              sendHold.timer = setTimeout(() => {
+                sendHold.current = 'held';
+                navigator.vibrate?.(15);
+                setScheduling(true);
+              }, 550);
+            }}
+            onPointerUp={() => clearTimeout(sendHold.timer)}
+            onPointerLeave={() => clearTimeout(sendHold.timer)}
+            aria-label={editing ? 'Save edit' : 'Send'}
+            title={editing ? undefined : 'Send (hold to schedule)'}
+          >
             {editing ? <Check size={22} /> : <Send size={20} />}
           </button>
         ) : (
@@ -386,6 +419,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
             { label: 'Camera', icon: Camera, onClick: () => fileInputs.camera.current.click() },
             { label: 'Document', icon: FileText, onClick: () => fileInputs.doc.current.click() },
             { label: 'Poll', icon: BarChart3, onClick: () => setPollOpen(true) },
+            { label: 'Schedule message', icon: Clock, onClick: () => setScheduling(true) },
           ]}
         />
       )}
@@ -417,6 +451,19 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
             sendMessage(conv.id, { type: 'poll', poll, replyTo });
             setComposer(conv.id, { replyTo: null });
             setPollOpen(false);
+          }}
+        />
+      )}
+      {scheduling && (
+        <ScheduleDialog
+          conv={conv}
+          text={text}
+          replyTo={replyTo}
+          toTokens={mentions.withTokens}
+          onClose={() => setScheduling(false)}
+          onScheduled={() => {
+            setText('');
+            setComposer(conv.id, { draft: '', replyTo: null });
           }}
         />
       )}

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, BarChart3, Link2, Settings2, UserCheck, Lock, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Ban, Download, Users, BarChart3, Link2, Settings2, UserCheck, Lock, ChevronRight, Flag, Archive, Bell, BellOff, Check, CloudDownload, Crown, Eraser, FileText, LogOut, MoreVertical, Pencil, Phone, Search, ShieldCheck, Timer, UserMinus, UserPlus, Video, X } from 'lucide-react';
 import Avatar from '../common/Avatar.jsx';
 import AvatarPicker from '../common/AvatarPicker.jsx';
 import Menu from '../common/Menu.jsx';
@@ -7,6 +7,7 @@ import Modal from '../common/Modal.jsx';
 import SearchPanel from './SearchPanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
 import ReportDialog from '../common/ReportDialog.jsx';
+import ExportDialog from '../common/ExportDialog.jsx';
 import InviteLinkDialog from './InviteLinkDialog.jsx';
 import GroupSettings, { JoinRequests } from './GroupSettings.jsx';
 import GroupDashboard from './GroupDashboard.jsx';
@@ -20,7 +21,7 @@ import { readMessages } from '../../lib/localdb.js';
 import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
-import { chatAvatarUrl, conversationTitle, isSelfChat, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
+import { chatAvatarUrl, conversationTitle, groupsInCommon, isSelfChat, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
 import { toast, useUI } from '../../store/ui.js';
 import { canSaveToPhone, contactSource, handleOf, knownPhone, removeContact, saveContact, saveToPhone, usePeople } from '../../store/people.js';
 import { canReadContacts } from '../../lib/contacts.js';
@@ -85,6 +86,41 @@ function MediaGrid({ convId }) {
             </button>
           ))}
         </div>
+      )}
+    </section>
+  );
+}
+
+/** Groups we're both in (WhatsApp's "groups in common"); tap one to open it. */
+function GroupsInCommon({ peer, me }) {
+  const conversations = useChat((s) => s.conversations);
+  const groups = useMemo(() => groupsInCommon(conversations, peer.id), [conversations, peer.id]);
+  const [all, setAll] = useState(false);
+  if (!groups.length) return null;
+  const shown = all ? groups : groups.slice(0, 5);
+  return (
+    <section className="info-card groups-in-common">
+      <h3 className="section-label">
+        {groups.length} {groups.length === 1 ? 'group' : 'groups'} in common
+      </h3>
+      {shown.map((g) => (
+        <button key={g.id} className="person-row action" onClick={() => useChat.getState().openConversation(g.id)}>
+          <Avatar name={g.name} url={g.avatarUrl} group size={40} />
+          <span className="person-info">
+            <span className="person-name">{g.name}</span>
+            <span className="person-sub">
+              {g.participants
+                .map((p) => (p.id === me ? 'You' : p.name?.split(' ')[0]))
+                .sort((a, b) => (a === 'You') - (b === 'You'))
+                .join(', ')}
+            </span>
+          </span>
+        </button>
+      ))}
+      {groups.length > 5 && !all && (
+        <button className="link-btn" onClick={() => setAll(true)}>
+          See all {groups.length}
+        </button>
       )}
     </section>
   );
@@ -384,6 +420,7 @@ function InfoContent({ conv }) {
   const canEdit = !isGroup || amAdmin || conv.permissions?.editInfo === 'all';
   const canAdd = isGroup && (amAdmin || conv.permissions?.addMembers === 'all');
   const [reviewing, setReviewing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const title = conversationTitle(conv, me);
 
   const save = async (data) => {
@@ -517,6 +554,8 @@ function InfoContent({ conv }) {
 
       <MediaGrid convId={conv.id} />
 
+      {!isGroup && peer && <GroupsInCommon peer={peer} me={me} />}
+
       <SaveOffline convId={conv.id} />
 
       <section className="info-card">
@@ -615,6 +654,9 @@ function InfoContent({ conv }) {
         <button onClick={() => setPrefs(conv.id, { archived: !conv.me?.archived })}>
           <Archive size={18} /> {conv.me?.archived ? 'Unarchive chat' : 'Archive chat'}
         </button>
+        <button onClick={() => setExporting(true)}>
+          <Download size={18} /> Export chat
+        </button>
         <button onClick={() => window.confirm('Clear all messages in this chat for you?') && clearChat(conv.id).catch((e) => toast(e.message, 'error'))}>
           <Eraser size={18} /> Clear chat
         </button>
@@ -628,6 +670,7 @@ function InfoContent({ conv }) {
       {adding && <AddMembersModal conv={conv} onClose={() => setAdding(false)} />}
       {inviting && <InviteLinkDialog conv={conv} onClose={closeInvite} />}
       {reviewing && <JoinRequests conv={conv} onClose={() => setReviewing(false)} />}
+      {exporting && <ExportDialog conv={conv} onClose={() => setExporting(false)} />}
     </>
   );
 }

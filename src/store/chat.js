@@ -11,6 +11,7 @@ import {
   patchStoredMessage,
   putStoredMedia,
   readMessages,
+  oldestStoredAt,
   saveMessages,
 } from '../lib/localdb.js';
 import { ensureMedia, mediaItemsOf, pendingKey, prefetchMedia, rememberMedia } from '../lib/media.js';
@@ -57,11 +58,22 @@ const isNetworkError = (e) => e?.status === 0 || /respond|connect|network|fetch/
 const PAGE = 40;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let syncRun = 0; // a newer background sync replaces an older one
+let backupTimer = null;
 
 // Per chat: up to which message time this device has the complete history (background sync).
 const syncedKey = () => `chat.synced.${meId()}`;
 const syncedUpTo = () => storage.get(syncedKey()) || {};
 const markSynced = (convId, at) => storage.set(syncedKey(), { ...syncedUpTo(), [convId]: at });
+// Per chat ('Keep chats offline'): true once its whole history is on the device, else how far
+// back the download has got (it carries on from there).
+const historyKey = () => `chat.history.${meId()}`;
+const historyDone = () => storage.get(historyKey()) || {};
+const markHistory = (convId, value) => storage.set(historyKey(), { ...historyDone(), [convId]: value });
+// Scheduled messages: their text, kept on this device by clientId (the server only has ciphertext).
+const scheduledTextKey = () => `chat.scheduledText.${meId()}`;
+const scheduledTexts = () => storage.get(scheduledTextKey()) || {};
+const withText = (x) => ({ ...x, text: scheduledTexts()[x.clientId] ?? null });
+const sortScheduled = (list) => [...list].sort((a, b) => Date.parse(a.sendAt) - Date.parse(b.sendAt));
 
 /** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
 const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
@@ -140,6 +152,14 @@ export function conversationTitle(conv, me) {
   if (conv.type === 'group') return conv.name || 'Group';
   if (isSelfChat(conv, me)) return `${useAuth.getState().user?.name || 'Me'} (You)`;
   return peerOf(conv, me)?.name || 'Unknown';
+}
+
+/** Groups I'm in that `userId` is in too (newest activity first). */
+export function groupsInCommon(conversations, userId) {
+  if (!userId) return [];
+  return Object.values(conversations)
+    .filter((c) => c.type === 'group' && c.participants.some((p) => p.id === userId))
+    .sort((a, b) => Date.parse(b.lastMessageAt || 0) - Date.parse(a.lastMessageAt || 0));
 }
 
 export function peerOf(conv, me) {
@@ -247,6 +267,7 @@ export const useChat = create((set, get) => {
     highlight: null, // { convId, id, at } message to scroll to
     unreadMarker: null, // { convId, from, count } the "unread messages" line of the open chat
     connection: 'connecting',
+    scheduled: {}, // convId -> my scheduled messages [{ id, sendAt, clientId, text, state, error }]
 
     reset() {
       pendingFiles.clear();
@@ -262,6 +283,7 @@ export const useChat = create((set, get) => {
         highlight: null,
         unreadMarker: null,
         connection: 'connecting',
+        scheduled: {},
       });
     },
 
@@ -293,6 +315,13 @@ export const useChat = create((set, get) => {
       keepOffline(conversations.map((c) => c.lastMessage).filter(Boolean));
       prefetchMedia(conversations.flatMap((c) => [c.avatarUrl, ...c.participants.map((p) => p.avatarUrl)]));
       get().backgroundSync(); // not awaited: runs quietly in the background
+      // Daily Google backup, when it's on (a little later, so it doesn't slow the start).
+      clearTimeout(backupTimer);
+      backupTimer = setTimeout(() => {
+        import('../lib/googleBackup.js')
+          .then((b) => b.backUpIfDue({ chats: Object.values(get().conversations), me: meId() }))
+          .catch(() => {});
+      }, 60_000);
     },
 
     /**
@@ -347,6 +376,35 @@ export const useChat = create((set, get) => {
         }
         if (complete) markSynced(c.id, c.lastMessage.createdAt);
         await sleep(300);
+      }
+
+      // 'Keep chats offline' (on by default): then the older history of every chat too, so
+      // messages already read open without a connection. A page at a time, quietly.
+      for (const c of chats) {
+        if (!useUI.getState().saveOffline) return;
+        let before = historyDone()[c.id];
+        if (before === true) continue;
+        before ||= await oldestStoredAt(c.id);
+        if (!before) continue; // nothing on the device yet: the catch-up above comes first
+        for (;;) {
+          while (busy() && current()) await sleep(700);
+          if (!current() || !useUI.getState().saveOffline) return;
+          let data;
+          try {
+            data = await api(`/api/conversations/${c.id}/messages?${new URLSearchParams({ limit: '100', before })}`);
+          } catch {
+            return;
+          }
+          const { messages, hasMore } = data;
+          if (messages.length) keepOffline(messages);
+          if (!hasMore || !messages.length) {
+            markHistory(c.id, true);
+            break;
+          }
+          before = messages[0].createdAt;
+          markHistory(c.id, before);
+          await sleep(400);
+        }
       }
     },
 
@@ -498,6 +556,7 @@ export const useChat = create((set, get) => {
       useUI.getState().setInfoOpen(false);
       if (!id) return;
       e2ee.prepare(id); // encryption keys ready before the first message is typed
+      get().loadScheduled(id);
       const t = get().threads[id];
       if ((!t?.loaded || t.stale) && !t?.loading) get().loadMessages(id);
       if (t?.loaded) get().markRead(id);
@@ -653,6 +712,59 @@ export const useChat = create((set, get) => {
       addItems(convId, [optimistic]);
       patchConversation(convId, { lastMessage: optimistic, lastMessageAt: optimistic.createdAt });
       return get().deliver(optimistic);
+    },
+
+    // ---------------------------------------------------------------- scheduled messages
+
+    /**
+     * Schedules a text message: it's encrypted now, on this device, and the server sends that
+     * copy at `sendAt` (even if this phone is off then). Its text is kept here to show it.
+     */
+    async scheduleMessage(convId, { text, replyTo }, sendAt) {
+      if (!e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be scheduled.');
+      const clientId = uid();
+      const payload = contentForEncryption({ type: 'text', text });
+      const out = await e2ee.encryptMessage(convId, payload);
+      if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
+      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: convId, sender: meId(), at: new Date(sendAt).toISOString() }, out.missing);
+      const message = sendPayload({ clientId, e2eeOut: { ...out, payload }, replyTo: replyTo ? { id: replyTo.id } : null });
+      storage.set(scheduledTextKey(), { ...scheduledTexts(), [clientId]: text });
+      const { scheduled } = await api(`/api/conversations/${convId}/scheduled`, {
+        method: 'POST',
+        body: { sendAt: new Date(sendAt).toISOString(), message },
+      });
+      set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled([...(s.scheduled[convId] || []), withText(scheduled)]) } }));
+      return scheduled;
+    },
+
+    /** My scheduled messages in a chat (from the server; their text from this device). */
+    async loadScheduled(convId) {
+      try {
+        const { scheduled } = await api(`/api/conversations/${convId}/scheduled`);
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled(scheduled.map(withText)) } }));
+        // Forget the text of ones already sent.
+        const live = new Set(Object.values(get().scheduled).flat().map((x) => x.clientId));
+        const texts = scheduledTexts();
+        const kept = Object.fromEntries(Object.entries(texts).filter(([id]) => live.has(id)));
+        if (Object.keys(kept).length !== Object.keys(texts).length && Object.keys(get().scheduled).length) storage.set(scheduledTextKey(), kept);
+      } catch {
+        /* offline: keep what's shown */
+      }
+    },
+
+    async rescheduleMessage(convId, id, sendAt) {
+      const { scheduled } = await api(`/api/conversations/${convId}/scheduled/${id}`, { method: 'PATCH', body: { sendAt: new Date(sendAt).toISOString() } });
+      set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? withText(scheduled) : x))) } }));
+    },
+
+    async cancelScheduled(convId, id) {
+      await api(`/api/conversations/${convId}/scheduled/${id}`, { method: 'DELETE' });
+      set((s) => ({ scheduled: { ...s.scheduled, [convId]: (s.scheduled[convId] || []).filter((x) => x.id !== id) } }));
+    },
+
+    /** The server sent, changed or cancelled one of my scheduled messages. */
+    onScheduledUpdate({ conversationId }) {
+      if (conversationId) get().loadScheduled(conversationId);
     },
 
     /** Optimistically shows a media message while the file uploads, then sends it. */

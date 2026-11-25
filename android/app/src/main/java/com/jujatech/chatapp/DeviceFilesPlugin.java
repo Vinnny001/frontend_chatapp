@@ -136,4 +136,58 @@ public class DeviceFilesPlugin extends Plugin {
             call.reject("Could not open file", e);
         }
     }
+
+    /**
+     * Hands a saved file to another app through the system share sheet (WhatsApp, Gmail,
+     * Drive, "Save to Files"...). The file must be under share/ or docs/.
+     */
+    @PluginMethod
+    public void share(PluginCall call) {
+        String mime = call.getString("mime", "application/octet-stream");
+        try {
+            File file = resolve(getContext(), call.getString("path"));
+            if (!file.isFile()) {
+                call.reject("File not found");
+                return;
+            }
+            // Old shared copies aren't needed once another app has them.
+            pruneShared(file.getParentFile());
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            Intent send = new Intent(Intent.ACTION_SEND)
+                .setType(mime == null || mime.isEmpty() ? "application/octet-stream" : mime)
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(android.content.ClipData.newRawUri(file.getName(), uri));
+            Intent chooser = Intent.createChooser(send, call.getString("title", "Share"))
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                getActivity().startActivity(chooser);
+                call.resolve();
+            } catch (ActivityNotFoundException e) {
+                call.reject("No app can receive this file", "NO_APP");
+            }
+        } catch (Exception e) {
+            call.reject("Could not share file", e);
+        }
+    }
+
+    /** Deletes shared copies older than a day (other than the one being shared now). */
+    private void pruneShared(File keep) {
+        try {
+            File root = resolve(getContext(), "share");
+            File[] dirs = root.listFiles();
+            if (dirs == null) return;
+            long cutoff = System.currentTimeMillis() - 24L * 3600 * 1000;
+            for (File dir : dirs) {
+                if (dir.equals(keep) || dir.lastModified() > cutoff) continue;
+                File[] files = dir.listFiles();
+                if (files != null) for (File f : files) //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                //noinspection ResultOfMethodCallIgnored
+                dir.delete();
+            }
+        } catch (Exception ignored) {
+            // best effort
+        }
+    }
 }

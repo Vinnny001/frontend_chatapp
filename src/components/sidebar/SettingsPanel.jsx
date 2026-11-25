@@ -10,6 +10,8 @@ import { api } from '../../lib/api.js';
 import { formatBytes } from '../../lib/format.js';
 import { clearDownloadedMedia, mediaUsage } from '../../lib/localdb.js';
 import { requestNotificationPermission } from '../../lib/notify.js';
+import { backUpNow, backupAvailable, backupState, setBackupEnabled } from '../../lib/googleBackup.js';
+import { useChat } from '../../store/chat.js';
 import { useAuth } from '../../store/auth.js';
 import { MEDIA_KINDS, WALLPAPERS, toast, useUI } from '../../store/ui.js';
 
@@ -176,6 +178,69 @@ function StorageRow() {
  * My chat link (like wa.me): people who open it land in a chat with me, with the message I
  * chose typed in. Opens ChatApp directly on Android, or the web app.
  */
+/** Back up chats to the user's Google Drive (off by default). */
+function GoogleBackup({ user }) {
+  const [state, setState] = useState(() => backupState(user.id));
+  const [progress, setProgress] = useState(null); // 'Backing up 3 of 12…'
+  const available = backupAvailable();
+  const chats = () => Object.values(useChat.getState().conversations);
+  const onProgress = (done, total) => setProgress(`Backing up ${Math.min(done + 1, total)} of ${total} chats…`);
+
+  async function toggle(enabled) {
+    setProgress(enabled ? 'Connecting to Google…' : null);
+    try {
+      await setBackupEnabled({ enabled, chats: chats(), me: user.id, onProgress });
+      if (enabled) toast('Chats backed up to your Google Drive');
+    } catch (e) {
+      if (e.code !== 'CANCELLED' && e.message !== 'Cancelled') toast(e.message, 'error');
+    } finally {
+      setProgress(null);
+      setState(backupState(user.id));
+    }
+  }
+
+  async function now() {
+    setProgress('Backing up…');
+    try {
+      await backUpNow({ chats: chats(), me: user.id, interactive: true, onProgress });
+      toast('Backed up');
+    } catch (e) {
+      if (e.message !== 'Cancelled') toast(e.message, 'error');
+    } finally {
+      setProgress(null);
+      setState(backupState(user.id));
+    }
+  }
+
+  return (
+    <div className="settings-group">
+      <Toggle
+        label="Back up chats to Google Drive"
+        hint={
+          available
+            ? 'Every day, a copy of your chats (made on this device) is saved in your Google account’s Drive, in a private app folder. Photos and files aren’t included.'
+            : 'Not available here yet.'
+        }
+        checked={state.enabled}
+        disabled={!available || !!progress}
+        onChange={toggle}
+      />
+      {progress && <p className="hint">{progress}</p>}
+      {state.enabled && !progress && (
+        <div className="backup-status">
+          <span className="hint">
+            {state.lastAt ? `Last backup: ${new Date(state.lastAt).toLocaleString()}` : 'No backup yet'}
+            {state.lastError ? ` · Last try failed: ${state.lastError}` : ''}
+          </span>
+          <button className="btn btn-ghost" onClick={now}>
+            Back up now
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyChatLink({ user }) {
   const [text, setText] = useState('');
   const who = user.username || user.phone;
@@ -218,7 +283,7 @@ export default function SettingsPanel() {
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
   const logout = useAuth((s) => s.logout);
-  const { theme, wallpaper, enterToSend, sounds, autoDownloadRules, setPref } = useUI();
+  const { theme, wallpaper, enterToSend, sounds, autoDownloadRules, saveOffline, setPref } = useUI();
 
   async function update(body) {
     try {
@@ -325,6 +390,15 @@ export default function SettingsPanel() {
       <div className="settings-group">
         <Toggle label="Enter key sends message" hint="Shift+Enter adds a new line" checked={enterToSend} onChange={(v) => setPref('enterToSend', v)} />
         <Toggle label="Sounds" checked={sounds} onChange={(v) => setPref('sounds', v)} />
+        <Toggle
+          label="Keep chats offline"
+          hint="Saves every chat’s messages on this device in the background, so chats you’ve read open without a connection"
+          checked={saveOffline}
+          onChange={(v) => {
+            setPref('saveOffline', v);
+            if (v) useChat.getState().backgroundSync();
+          }}
+        />
         {notifications === 'default' && (
           <button className="btn btn-ghost" onClick={requestNotificationPermission}>
             Enable desktop notifications
@@ -353,6 +427,9 @@ export default function SettingsPanel() {
 
       <h3 className="section-label">Storage</h3>
       <StorageRow />
+
+      <h3 className="section-label">Chat backup</h3>
+      <GoogleBackup user={user} />
 
       <h3 className="section-label">Chat link</h3>
       <MyChatLink user={user} />

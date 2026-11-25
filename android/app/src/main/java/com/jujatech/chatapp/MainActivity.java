@@ -38,6 +38,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OutboxPlugin.class);
         registerPlugin(DeviceFilesPlugin.class);
         registerPlugin(NativeSessionPlugin.class);
+        registerPlugin(GoogleDrivePlugin.class);
         super.onCreate(savedInstanceState);
         handleNotificationIntent(getIntent());
     }

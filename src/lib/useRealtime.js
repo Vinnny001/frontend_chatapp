@@ -152,6 +152,7 @@ export function useRealtime(token) {
     socket.on('message:new', (m) => useChat.getState().onMessageNew(m));
     socket.on('message:updated', (p) => useChat.getState().onMessageUpdated(p));
     socket.on('conversation:marked', (p) => useChat.getState().onMarked(p));
+    socket.on('scheduled:update', (p) => useChat.getState().onScheduledUpdate(p));
     // Help: support replied to one of my requests (or an admin's inbox changed).
     socket.on('support:update', (p) => supportUpdated(p));
     socket.on('message:removed', (p) => useChat.getState().onMessageRemoved(p));

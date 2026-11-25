@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, CircleDashed, HelpCircle, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, CircleDashed, Download, HelpCircle, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
 import DevicesPanel from './DevicesPanel.jsx';
@@ -7,6 +7,7 @@ import SidePanel from './SidePanel.jsx';
 import SharedBrowser from '../common/SharedBrowser.jsx';
 import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
+import ExportDialog from '../common/ExportDialog.jsx';
 import ConversationItem from './ConversationItem.jsx';
 import NewChatPanel from './NewChatPanel.jsx';
 import NewGroupPanel from './NewGroupPanel.jsx';
@@ -48,6 +49,8 @@ export default function Sidebar() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [menu, setMenu] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const infoOpen = useUI((s) => s.infoOpen);
   const unseen = useStatus(unseenCount);
 
   const me = user?.id;
@@ -154,6 +157,7 @@ export default function Sidebar() {
       </button>
 
       {Panel && <Panel />}
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
 
       {menu && (
         <Menu
@@ -166,6 +170,8 @@ export default function Sidebar() {
             { label: 'Calls', icon: Phone, onClick: () => openPanel('calls') },
             user?.isAdmin && { label: 'Admin', icon: Shield, onClick: () => useUI.getState().setAdminOpen(true) },
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
+            // (With no chat or chat info open: export several chats at once.)
+            !activeId && !infoOpen && { label: 'Export chats', icon: Download, onClick: () => setExporting(true) },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
             { label: 'Help', icon: HelpCircle, onClick: () => openPanel('help') },
             { label: 'Log out', icon: LogOut, danger: true, onClick: logout },

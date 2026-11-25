@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { mediaUrl } from './config.js';
-import { getStoredMedia, putStoredMedia } from './localdb.js';
+import { getStoredMedia, hasStoredMedia, onMediaStored, putStoredMedia } from './localdb.js';
 import { decryptToBlob, mediaKeyFor } from './e2ee/files.js';
 
 // Photos, videos, voice notes, files and avatars are downloaded once and kept on the device
@@ -37,6 +37,22 @@ export async function ensureMedia(url) {
   })();
   inflight.set(url, job);
   return job;
+}
+
+/** React hook: whether a file is saved on this device (so it opens offline). */
+export function useIsStored(url) {
+  const [stored, setStored] = useState(() => !!url && inMemory(url));
+  useEffect(() => {
+    if (!url || inMemory(url)) return undefined;
+    let cancelled = false;
+    hasStoredMedia(url).then((yes) => !cancelled && setStored(yes));
+    const off = onMediaStored((u) => u === url && setStored(true));
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [url]);
+  return stored;
 }
 
 /** Store a file we already have (e.g. one this user just uploaded) under its final URL. */
