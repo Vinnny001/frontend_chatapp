@@ -105,7 +105,12 @@ async function createPeer(localStream) {
   const servers = await iceServers();
   const callId = useCall.getState().call?.id;
   if (!callId) throw new Error('Call ended');
-  pc = new RTCPeerConnection({ iceServers: servers, bundlePolicy: 'max-bundle' });
+  pc = new RTCPeerConnection({
+    iceServers: servers,
+    bundlePolicy: 'max-bundle',
+    // (Development only: window.__forceRelay sends the call through the TURN relay, for testing.)
+    ...(import.meta.env.DEV && window.__forceRelay && { iceTransportPolicy: 'relay' }),
+  });
   pendingCandidates = [];
   restarts = 0;
   for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
