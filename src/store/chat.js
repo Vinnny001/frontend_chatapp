@@ -74,6 +74,9 @@ const scheduledTextKey = () => `chat.scheduledText.${meId()}`;
 const scheduledTexts = () => storage.get(scheduledTextKey()) || {};
 const withText = (x) => ({ ...x, text: scheduledTexts()[x.clientId] ?? null });
 const sortScheduled = (list) => [...list].sort((a, b) => Date.parse(a.sendAt) - Date.parse(b.sendAt));
+/** Scheduled messages waiting at once in one chat (the server has the same limit). */
+export const SCHEDULE_PER_CHAT = 3;
+export const scheduleLimitText = `You can have up to ${SCHEDULE_PER_CHAT} scheduled messages in a chat. Delete one or wait for it to be sent.`;
 // Scheduled while offline, not on the server yet: [{ convId, clientId, body }].
 const scheduledQueueKey = () => `chat.scheduledQueue.${meId()}`;
 const scheduledQueue = () => storage.get(scheduledQueueKey()) || [];
@@ -741,6 +744,8 @@ export const useChat = create((set, get) => {
      * copy at `sendAt` (even if this phone is off then). Its text is kept here to show it.
      */
     async scheduleMessage(convId, { text, replyTo }, sendAt) {
+      // (Counts ones made offline too; the server checks again.)
+      if ((get().scheduled[convId] || []).length >= SCHEDULE_PER_CHAT) throw new Error(scheduleLimitText);
       const clientId = uid();
       const at = new Date(sendAt).toISOString();
       const message = await encryptScheduled(convId, clientId, text, replyTo?.id, at);

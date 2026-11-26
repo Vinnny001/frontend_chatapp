@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ICE_SERVERS } from '../lib/config.js';
 import { emitAck } from '../lib/socket.js';
+import { api } from '../lib/api.js';
 import { uid } from '../lib/format.js';
 import { playEndTone, startRingback, startRingtone, stopRingback, stopRingtone } from '../lib/notify.js';
 import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/native.js';
@@ -13,12 +14,40 @@ import { useChat } from './chat.js';
 // relays signaling messages.
 
 const RING_TIMEOUT_MS = 45_000;
+const CONNECT_TIMEOUT_MS = 30_000; // answered, but the phones can't reach each other
+const RECOVER_MS = 20_000; // connection dropped (network change...): give it this long to come back
 
 let pc = null;
 let pendingCandidates = [];
 let ringTimeout = null;
 let pendingAnswer = null; // { callId, until }: answered from the notification before the call arrived
 let externalTimer = null;
+let connectTimer = null;
+let recoverTimer = null;
+let restarts = 0;
+
+// STUN/TURN servers from the API (TURN relays the encrypted call when a direct connection
+// isn't possible, e.g. on mobile data). Fetched ahead of time and kept until they expire.
+let ice = null; // { servers, until }
+let iceLoading = null;
+function loadIceServers() {
+  if (ice && ice.until > Date.now()) return Promise.resolve(ice.servers);
+  iceLoading ??= api('/api/calls/ice-servers')
+    .then(({ iceServers, ttl }) => {
+      // (A relay set in the app's own build settings is kept too.)
+      const extra = ICE_SERVERS.filter((s) => [].concat(s.urls).some((u) => /^turns?:/.test(u)));
+      const servers = [...(iceServers?.length ? iceServers : ICE_SERVERS.slice(0, 1)), ...extra];
+      ice = { servers, until: Date.now() + Math.max(60, (ttl || 3600) - 60) * 1000 };
+      return servers;
+    })
+    .catch(() => ICE_SERVERS)
+    .finally(() => {
+      iceLoading = null;
+    });
+  return iceLoading;
+}
+/** The servers, without holding the call up for more than a few seconds. */
+const iceServers = () => Promise.race([loadIceServers(), new Promise((r) => setTimeout(() => r(ice?.servers || ICE_SERVERS), 4000))]);
 
 async function getMedia(kind, facingMode = 'user') {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls are not supported on this device');
@@ -54,19 +83,66 @@ async function setupTrusted(call, data) {
   return !(encryptedChat && e2ee.enabled());
 }
 
-function createPeer(localStream) {
-  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+/**
+ * The caller asks for a fresh connection path (after a network change or a failed attempt):
+ * same encryption keys, new routes, through the relay if needed.
+ */
+async function restartConnection() {
+  const { call } = useCall.getState();
+  if (!pc || !call || call.direction !== 'outgoing' || restarts >= 3) return;
+  restarts++;
+  try {
+    pc.restartIce?.();
+    const offer = await pc.createOffer({ iceRestart: true });
+    await pc.setLocalDescription(offer);
+    await sendSetup(pc.localDescription.toJSON());
+  } catch (e) {
+    console.warn('call: reconnect failed', e);
+  }
+}
+
+async function createPeer(localStream) {
+  const servers = await iceServers();
+  const callId = useCall.getState().call?.id;
+  if (!callId) throw new Error('Call ended');
+  pc = new RTCPeerConnection({ iceServers: servers, bundlePolicy: 'max-bundle' });
   pendingCandidates = [];
+  restarts = 0;
   for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
   pc.onicecandidate = (e) => e.candidate && signal({ candidate: e.candidate.toJSON() });
-  pc.ontrack = (e) => useCall.getState().patch({ remoteStream: e.streams[0] });
+  pc.ontrack = (e) => useCall.getState().patch({ remoteStream: e.streams[0] || new MediaStream([e.track]) });
+  const store = () => useCall.getState();
+  // Answered but never connected (both behind strict networks, no relay): say so.
+  clearTimeout(connectTimer);
+  connectTimer = setTimeout(() => {
+    if (store().call?.id === callId && store().call.state !== 'active') store().hangup('Couldn’t connect the call. Check your internet connection.');
+  }, CONNECT_TIMEOUT_MS);
   pc.onconnectionstatechange = () => {
     const state = pc?.connectionState;
+    const { call } = store();
+    if (!call || call.id !== callId) return;
     if (state === 'connected') {
-      const { call } = useCall.getState();
-      if (call && call.state !== 'active') useCall.getState().patch({ state: 'active', startedAt: Date.now() });
+      clearTimeout(connectTimer);
+      clearTimeout(recoverTimer);
+      recoverTimer = null;
+      if (call.state !== 'active') store().patch({ state: 'active', startedAt: Date.now(), reconnecting: false });
+      else if (call.reconnecting) store().patch({ reconnecting: false });
+    } else if ((state === 'disconnected' || state === 'failed') && call.state === 'active') {
+      // Dropped mid-call (switched Wi-Fi ↔ mobile data, weak signal): try to get it back.
+      if (!call.reconnecting) store().patch({ reconnecting: true });
+      if (state === 'failed') restartConnection();
+      else setTimeout(() => pc?.connectionState === 'disconnected' && restartConnection(), 4000);
+      if (!recoverTimer) {
+        recoverTimer = setTimeout(() => {
+          recoverTimer = null;
+          if (store().call?.id === callId && pc?.connectionState !== 'connected') store().hangup('Connection lost');
+        }, RECOVER_MS);
+      }
     } else if (state === 'failed') {
-      useCall.getState().hangup('Connection lost');
+      // Never connected: one more try along other routes before giving up.
+      if (call.direction === 'outgoing' && restarts < 1) restartConnection();
+      else if (call.direction !== 'outgoing') return; // (the caller retries; the connect timer ends it)
+      else store().hangup('Couldn’t connect the call. Check your internet connection.');
     }
   };
   return pc;
@@ -79,6 +155,9 @@ async function flushCandidates() {
 
 function cleanup() {
   clearTimeout(ringTimeout);
+  clearTimeout(connectTimer);
+  clearTimeout(recoverTimer);
+  recoverTimer = null;
   stopRingtone();
   stopRingback();
   const { call } = useCall.getState();
@@ -106,6 +185,7 @@ export const useCall = create((set, get) => ({
     set({
       call: { id, conversationId, peer, kind, direction: 'outgoing', state: 'ringing', muted: false, cameraOff: false, facingMode: 'user' },
     });
+    loadIceServers(); // (ready by the time they answer)
     try {
       const localStream = await getMedia(kind);
       if (get().call?.id !== id) return localStream.getTracks().forEach((t) => t.stop());
@@ -131,7 +211,7 @@ export const useCall = create((set, get) => ({
     try {
       const localStream = await getMedia(call.kind);
       get().patch({ localStream, state: 'connecting' });
-      createPeer(localStream);
+      await createPeer(localStream);
       await emitAck('call:accept', { callId: call.id });
     } catch (e) {
       emitAck('call:reject', { callId: call.id }).catch(() => {});
@@ -225,6 +305,7 @@ export const useCall = create((set, get) => ({
       call: { id: callId, conversationId, peer: { ...from, name: displayName(from) }, kind, direction: 'incoming', state: 'ringing', muted: false, cameraOff: false, facingMode: 'user' },
     });
     ringTimeout = setTimeout(() => get().call?.state === 'ringing' && get().finish('Missed call'), RING_TIMEOUT_MS);
+    loadIceServers(); // (ready if they answer)
     if (pendingAnswer?.callId === callId && pendingAnswer.until > Date.now()) {
       pendingAnswer = null;
       get().acceptCall(); // "Answer" was tapped on the notification
@@ -262,7 +343,12 @@ export const useCall = create((set, get) => ({
     clearTimeout(ringTimeout);
     stopRingback(); // answered
     get().patch({ state: 'connecting' });
-    createPeer(call.localStream);
+    try {
+      await createPeer(call.localStream);
+    } catch {
+      return;
+    }
+    if (get().call?.id !== callId) return;
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await sendSetup(pc.localDescription.toJSON());

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Clock, Pencil, Trash2 } from 'lucide-react';
 import Modal from '../common/Modal.jsx';
 import { plainMentions } from '../../lib/mentions.js';
-import { useChat } from '../../store/chat.js';
+import { SCHEDULE_PER_CHAT, scheduleLimitText, useChat } from '../../store/chat.js';
 import { toast } from '../../store/ui.js';
 
 // Scheduled messages: written now, sent by the server at the chosen time (encrypted on this
@@ -118,8 +118,10 @@ export function ScheduleDialog({ conv, text: initialText = '', replyTo, toTokens
   const [text, setText] = useState(initialText);
   const [when, setWhen] = useState(() => localInput(presets()[0].at));
   const [busy, setBusy] = useState(false);
+  const full = useChat((s) => (s.scheduled[conv.id] || []).length >= SCHEDULE_PER_CHAT);
 
   async function schedule() {
+    if (full) return toast(scheduleLimitText, 'error');
     const body = text.trim();
     if (!body) return toast('Write the message first');
     const at = new Date(when);
@@ -152,17 +154,18 @@ export function ScheduleDialog({ conv, text: initialText = '', replyTo, toTokens
           <button className="btn btn-ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={schedule} disabled={busy || !text.trim()}>
+          <button className="btn btn-primary" onClick={schedule} disabled={busy || full || !text.trim()}>
             <Clock size={16} /> {busy ? 'Scheduling…' : 'Schedule'}
           </button>
         </>
       }
     >
+      {full && <p className="when-summary invalid">{scheduleLimitText}</p>}
       <GrowingText autoFocus value={text} onChange={setText} placeholder="Message" aria-label="Message to schedule" />
       <WhenPicker value={when} onChange={setWhen} />
       <p className="hint">
         It’s sent at that time even if your phone is off or offline then. Only you see it until then, and you can edit it
-        until it goes out.
+        until it goes out. Up to {SCHEDULE_PER_CHAT} per chat.
       </p>
     </Modal>
   );

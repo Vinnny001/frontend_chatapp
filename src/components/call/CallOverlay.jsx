@@ -34,7 +34,9 @@ export default function CallOverlay() {
     call.state === 'ended'
       ? call.endReason
       : call.state === 'active'
-        ? timer
+        ? call.reconnecting
+          ? 'Reconnecting…'
+          : timer
         : call.state === 'connecting'
           ? 'Connecting…'
           : incoming
@@ -63,7 +65,7 @@ export default function CallOverlay() {
             <Lock size={13} /> End-to-end encrypted
           </span>
         )}
-        <p className={call.state === 'ringing' ? 'pulse' : ''}>{status}</p>
+        <p className={call.state === 'ringing' || call.reconnecting ? 'pulse' : ''}>{status}</p>
       </div>
 
       <div className="call-controls">
