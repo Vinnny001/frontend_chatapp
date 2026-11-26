@@ -48,6 +48,7 @@ export const useUI = create((set, get) => ({
   adminOpen: false,
   joinCode: null, // a group invite being looked at (from a link)
   viewOnce: null, // { url, type } of a view-once photo/video being shown
+  logoutOpen: false, // the Log out question (keep or erase this device's chats)
 
   setPref(key, value) {
     storage.set(`ui.${key}`, value);
@@ -72,6 +73,7 @@ export const useUI = create((set, get) => ({
   setAdminOpen: (adminOpen) => set({ adminOpen }),
   setJoinCode: (joinCode) => set({ joinCode }),
   setViewOnce: (viewOnce) => set({ viewOnce }),
+  setLogoutOpen: (logoutOpen) => set({ logoutOpen }),
 
   toast(message, kind = 'info') {
     const id = ++toastId;

@@ -10,7 +10,7 @@ import { applySyncedContacts, autoSyncContacts, cachedContactMatches, contactMat
 import { loadSavedContacts, resetPeople } from '../store/people.js';
 import { setupPush } from './push.js';
 import { clearNativeSession, onNativeAction, setNativeSession } from './native.js';
-import { useAuth } from '../store/auth.js';
+import { keepingChats, useAuth } from '../store/auth.js';
 import { useCall } from '../store/call.js';
 import { onCallKeyRequest, useGroupCall } from '../store/groupCall.js';
 import { useChat } from '../store/chat.js';
@@ -22,9 +22,14 @@ import { supportUpdated } from './supportEvents.js';
 import { tokenDeviceId } from './device.js';
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
-export function useRealtime(token) {
+/**
+ * `session`: "userId:deviceId" of the signed-in device (renewing its login doesn't restart
+ * anything; signing in or out does).
+ */
+export function useRealtime(session) {
   useEffect(() => {
-    if (!token) return undefined;
+    const { token } = useAuth.getState();
+    if (!session || !token) return undefined;
     const userId = useAuth.getState().user?.id;
     const chat = useChat.getState();
     const calls = useCall.getState();
@@ -124,7 +129,7 @@ export function useRealtime(token) {
     cleanups.push(() => window.removeEventListener('pagehide', saveNow));
 
     // 3) Realtime connection.
-    const socket = connectSocket(token);
+    const socket = connectSocket();
     let everConnected = false;
 
     socket.on('connect', () => {
@@ -145,8 +150,9 @@ export function useRealtime(token) {
     socket.io.on('reconnect_attempt', () => chat.setConnection('connecting'));
     socket.on('connect_error', (err) => {
       chat.setConnection('offline');
-      // Signed out from another device (or the account was disabled).
-      if (err.message === 'unauthorized') useAuth.getState().logout({ server: false });
+      // The sign-in ended: ran out ('expired': this device's chats are kept), or signed out
+      // from another device / password changed ('revoked').
+      if (err.message === 'unauthorized') useAuth.getState().logout({ server: false, reason: err.data?.reason });
     });
 
     socket.on('message:new', (m) => useChat.getState().onMessageNew(m));
@@ -244,7 +250,13 @@ export function useRealtime(token) {
     return () => {
       cleanups.forEach((fn) => fn());
       if (useAuth.getState().token) saveNow();
-      else {
+      else if (keepingChats()) {
+        // Signed out keeping this device's chats (for signing in again here).
+        saveNow();
+        clearNativeSession();
+        resetPeople();
+        closeLocalDb(userId);
+      } else {
         // Signed out: don't leave their chats or media on the device.
         clearNativeSession();
         resetPeople();
@@ -257,5 +269,5 @@ export function useRealtime(token) {
       useGroupCall.getState().leave();
       useChat.getState().reset();
     };
-  }, [token]);
+  }, [session]);
 }

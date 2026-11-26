@@ -3024,3 +3024,50 @@ button.composer-locked.blocked {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* ---------- log out / restore ---------- */
+.logout-dialog .modal-body {
+  display: grid;
+  gap: 10px;
+}
+.logout-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.logout-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.logout-option span {
+  display: grid;
+  gap: 2px;
+}
+.logout-option small {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.restore-offer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 12px 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.restore-offer-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+.restore-offer-text span {
+  color: var(--text-2);
+}

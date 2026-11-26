@@ -9,6 +9,7 @@ import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
 import ExportDialog from '../common/ExportDialog.jsx';
 import ConversationItem from './ConversationItem.jsx';
+import RestoreOffer from './RestoreOffer.jsx';
 import NewChatPanel from './NewChatPanel.jsx';
 import NewGroupPanel from './NewGroupPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
@@ -39,7 +40,6 @@ const PANELS = { help: HelpPanel, status: StatusPanel, newChat: NewChatPanel, ne
 
 export default function Sidebar() {
   const user = useAuth((s) => s.user);
-  const logout = useAuth((s) => s.logout);
   const conversations = useChat((s) => s.conversations);
   const loaded = useChat((s) => s.loaded);
   const activeId = useChat((s) => s.activeId);
@@ -131,6 +131,8 @@ export default function Sidebar() {
         ))}
       </div>
 
+      <RestoreOffer />
+
       <div className="conv-list">
         {!loaded && Array.from({ length: 7 }, (_, i) => <div key={i} className="conv-skeleton" />)}
         {loaded && list.map((c) => <ConversationItem key={c.id} conv={c} me={me} active={c.id === activeId} />)}
@@ -174,7 +176,7 @@ export default function Sidebar() {
             !activeId && !infoOpen && { label: 'Export chats', icon: Download, onClick: () => setExporting(true) },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
             { label: 'Help', icon: HelpCircle, onClick: () => openPanel('help') },
-            { label: 'Log out', icon: LogOut, danger: true, onClick: logout },
+            { label: 'Log out', icon: LogOut, danger: true, onClick: () => useUI.getState().setLogoutOpen(true) },
           ]}
         />
       )}

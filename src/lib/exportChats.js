@@ -48,7 +48,24 @@ function nameOf(conv, id, me) {
   return conv.participants.find((p) => p.id === id)?.name || 'Someone';
 }
 
-function messageJson(m, conv, me) {
+/** What a new device needs to show this message again (restoring a backup): its content and which copy it is. */
+function restoreData(m) {
+  if (!m.e2ee?.ciphertext || m.e2eeState !== 'ok' || m.deletedForEveryone || m.viewOnce) return undefined;
+  return {
+    fp: e2ee.fingerprint(m.e2ee.ciphertext),
+    p: {
+      type: m.type,
+      text: m.text || '',
+      ...(m.media && { media: m.media }),
+      ...(m.poll && { poll: { question: m.poll.question, options: m.poll.options.map((o) => o.text), multiple: !!m.poll.multiple } }),
+      ...(m.forwarded && { forwarded: true }),
+      ...(m.statusRef && { statusRef: m.statusRef }),
+      ...(m.quoteRef && { quoteRef: m.quoteRef }),
+    },
+  };
+}
+
+function messageJson(m, conv, me, { restore = false } = {}) {
   const unreadable = m.e2ee && m.e2eeState && m.e2eeState !== 'ok';
   return {
     id: m.id,
@@ -69,11 +86,12 @@ function messageJson(m, conv, me) {
     ...(m.forwarded && { forwarded: true }),
     ...(m.editedAt && { editedAt: m.editedAt }),
     ...(m.reactions?.length && { reactions: m.reactions.map((r) => ({ emoji: r.emoji, by: nameOf(conv, r.user, me) })) }),
+    ...(restore && restoreData(m) && { restore: restoreData(m) }),
   };
 }
 
 /** One chat as an object for the export (range optional: { from, to } as ISO strings). */
-export async function chatExport(conv, me, range = {}) {
+export async function chatExport(conv, me, range = {}, { restore = false } = {}) {
   const messages = (await decrypted(await messagesOf(conv.id, range))).filter((m) => m.type !== 'system' || m.text);
   return {
     id: conv.id,
@@ -82,7 +100,7 @@ export async function chatExport(conv, me, range = {}) {
     participants: conv.participants.map((p) => ({ id: p.id, name: p.id === me ? 'You' : p.name, ...(p.username && { username: p.username }) })),
     ...((range.from || range.to) && { range: { from: range.from || null, to: range.to || null } }),
     messageCount: messages.length,
-    messages: messages.map((m) => messageJson(m, conv, me)),
+    messages: messages.map((m) => messageJson(m, conv, me, { restore })),
   };
 }
 
@@ -90,10 +108,10 @@ const fileSafe = (s) => s.replace(/[^\w\- ]+/g, '').trim().slice(0, 40) || 'chat
 const stamp = () => new Date().toISOString().slice(0, 10);
 
 /** The export file for one or more chats: { blob, name }. onProgress(done, total). */
-export async function buildExport(convs, me, { range = {}, onProgress } = {}) {
+export async function buildExport(convs, me, { range = {}, onProgress, restore = false } = {}) {
   const chats = [];
   for (const conv of convs) {
-    chats.push(await chatExport(conv, me, range));
+    chats.push(await chatExport(conv, me, range, { restore }));
     onProgress?.(chats.length, convs.length);
   }
   const data = { app: 'ChatApp', format: 1, exportedAt: new Date().toISOString(), chats };

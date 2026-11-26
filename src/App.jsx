@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { useAuth } from './store/auth.js';
+import LogoutDialog from './components/common/LogoutDialog.jsx';
+import { tokenDeviceId } from './lib/device.js';
 import { useChat } from './store/chat.js';
 import { toast, useUI } from './store/ui.js';
 import { useRealtime } from './lib/useRealtime.js';
@@ -128,7 +130,19 @@ function LockedCall() {
 }
 
 function Messenger({ token }) {
-  useRealtime(token);
+  // (Keyed on the device, not the login itself: renewing the login changes nothing here.)
+  useRealtime(token ? `${useAuth.getState().user?.id}:${tokenDeviceId(token) || 'legacy'}` : null);
+  // Stay signed in while the app is used: the login is renewed once a day.
+  useEffect(() => {
+    const renew = () => document.visibilityState === 'visible' && useAuth.getState().renewSession();
+    renew();
+    const timer = setInterval(renew, 3600_000);
+    document.addEventListener('visibilitychange', renew);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', renew);
+    };
+  }, []);
   useBackButton();
   useInviteLinks();
   // Sessions from before linked devices register this device once.
@@ -164,6 +178,7 @@ function Messenger({ token }) {
       <PhoneMenu />
       <InAppBanner />
       <ProfilePreview />
+      <LogoutDialog />
       <AdminPanel />
       <JoinGroupDialog />
       <ViewOnceViewer />

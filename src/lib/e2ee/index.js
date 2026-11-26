@@ -205,17 +205,40 @@ function importHistory(records) {
 
 export const pullOwnDevices = () => pullSync();
 
+/** A message's encrypted copy, as a short fingerprint (to match restored content to it). */
+export const fingerprint = (ciphertext) => (ciphertext ? fpOf(ciphertext) : null);
+
+/**
+ * Messages restored from a backup (Google Drive): [id, { p, fp, conv, sender, at }] pairs,
+ * added like history from another of my devices. → how many were new here.
+ */
+export function importRestored(records) {
+  if (!session) return 0;
+  let added = 0;
+  for (const [id, rec] of records) {
+    if (typeof id !== 'string' || !rec?.p || !rec.fp || rec.p.viewOnce) continue;
+    if (plain.get(id)?.state === 'ok') continue;
+    remember(id, { p: { v: 1, ...rec.p }, fp: rec.fp, state: 'ok', conv: rec.conv, sender: rec.sender, at: rec.at });
+    added++;
+  }
+  if (added) appHooks.onHistory(added);
+  return added;
+}
+
 /** I approved a sign-in by scanning its QR code: its history goes sealed to the key in that code. */
 export async function rememberLink(requestId, publicKey) {
   await session?.db.put('kv', `link:${requestId}`, publicKey);
 }
 export const shareContacts = (entries) => publishContacts(entries);
 
-/** Signed out: forget everything this device knew (its keys are worthless now anyway). */
+/**
+ * Signed out. `wipe`: erase this device's keys and decrypted messages (otherwise they stay on
+ * the device for when the same account signs in here again).
+ */
 export async function stop({ wipe = false } = {}) {
   const s = session;
   session = null;
-  if (wipe) starting = null;
+  starting = null;
   stopSync();
   mls.stop();
   plain.clear();
@@ -227,6 +250,9 @@ export async function stop({ wipe = false } = {}) {
     if (wipe) await deleteDb(dbName(s.userId, s.deviceId));
   }
 }
+
+/** Erases a device's keys and decrypted messages kept from an earlier sign-in. */
+export const eraseDevice = (userId, deviceId) => (userId && deviceId ? deleteDb(dbName(userId, deviceId)).catch(() => {}) : Promise.resolve());
 
 export const enabled = () => !!session && mls.active();
 

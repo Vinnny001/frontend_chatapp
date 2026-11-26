@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { buildExport } from './exportChats.js';
 import { storage } from './storage.js';
+import * as e2ee from './e2ee/index.js';
 
 // Chat backup to the user's Google account (Google Drive, in its hidden app folder, as
 // WhatsApp does). Chats are end-to-end encrypted, so the backup is made on this device (the
@@ -82,11 +83,16 @@ async function drive(token, url, init = {}) {
   return res.json();
 }
 
+/** The backup file in Drive's app folder: { id, modifiedTime, size } or null. */
+async function findBackup(token) {
+  const q = encodeURIComponent(`name='${FILE_NAME}'`);
+  const { files } = await drive(token, `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,modifiedTime,size)`);
+  return files?.[0] || null;
+}
+
 /** Uploads (replacing the previous backup). */
 async function upload(token, blob) {
-  const q = encodeURIComponent(`name='${FILE_NAME}'`);
-  const { files } = await drive(token, `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`);
-  const existing = files?.[0]?.id;
+  const existing = (await findBackup(token))?.id;
   const meta = existing ? {} : { name: FILE_NAME, parents: ['appDataFolder'] };
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
@@ -109,7 +115,8 @@ export function backUpNow({ chats, me, interactive = false, onProgress }) {
   running ??= (async () => {
     try {
       const token = await accessToken(interactive);
-      const { blob } = await buildExport(chats, me, { onProgress });
+      // (With what a new device needs to show each message again: see restoreFromBackup.)
+      const { blob } = await buildExport(chats, me, { onProgress, restore: true });
       const file = await upload(token, blob);
       const at = new Date().toISOString();
       saveState(me, { lastAt: at, lastError: null });
@@ -122,6 +129,29 @@ export function backUpNow({ chats, me, interactive = false, onProgress }) {
     }
   })();
   return running;
+}
+
+/**
+ * Restores chats from the Google Drive backup onto this device (signed in again, or a new
+ * phone): messages it couldn't read ("Sent before this device was linked") become readable.
+ * → { restored, backupAt } ; throws { code: 'NO_BACKUP' } when there's none.
+ */
+export async function restoreFromBackup({ me, interactive = true }) {
+  const token = await accessToken(interactive);
+  const file = await findBackup(token);
+  if (!file) throw Object.assign(new Error('No ChatApp backup found in this Google account'), { code: 'NO_BACKUP' });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Couldn’t download the backup (${res.status})`);
+  const data = await res.json();
+  const records = [];
+  for (const chat of data.chats || []) {
+    for (const m of chat.messages || []) {
+      if (m.restore) records.push([m.id, { ...m.restore, conv: chat.id, sender: m.sender?.id || null, at: m.sentAt }]);
+    }
+  }
+  const restored = e2ee.importRestored(records);
+  storage.set(`backup.restored.${me}`, new Date().toISOString());
+  return { restored, backupAt: file.modifiedTime };
 }
 
 /** Turns backup on (asks Google for access, then backs up) or off. */

@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import { REALTIME_URL } from './config.js';
+import { getApiToken } from './api.js';
 
 let socket = null;
 
@@ -12,11 +13,12 @@ export function setAppActive(active) {
   if (socket?.connected) socket.emit('presence:state', { active }, () => {});
 }
 
-export function connectSocket(token) {
+export function connectSocket() {
   socket?.disconnect();
   socket = io(REALTIME_URL, {
     // Sent on every (re)connect: whether the app is on screen ("online" means open, as on WhatsApp).
-    auth: (cb) => cb({ token, active: appActive }),
+    // (The current login: it's renewed now and then while the app is used.)
+    auth: (cb) => cb({ token: getApiToken(), active: appActive }),
     transports: ['websocket', 'polling'],
     reconnectionDelay: 500,
     reconnectionDelayMax: 5000,

@@ -4,6 +4,7 @@ let token = null;
 let onUnauthorized = () => {};
 
 export const setApiToken = (t) => (token = t);
+export const getApiToken = () => token;
 export const setUnauthorizedHandler = (fn) => (onUnauthorized = fn);
 
 export class ApiError extends Error {
@@ -31,7 +32,8 @@ export async function api(path, { method = 'GET', body, headers: extra } = {}) {
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && token) onUnauthorized();
+    // (data.code says why: 'expired', 'signed-out', 'revoked'...)
+    if (res.status === 401 && token) onUnauthorized(data.code);
     throw new ApiError(res.status, data.message || `Request failed (${res.status})`, data.errors);
   }
   return data;

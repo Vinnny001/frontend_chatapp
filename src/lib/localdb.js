@@ -38,6 +38,9 @@ export async function closeLocalDb(userId, { erase = false } = {}) {
   if (erase && userId) await deleteDB(dbName(userId)).catch(() => {});
 }
 
+/** Erases a user's saved chats and media (kept from an earlier sign-in) without opening them. */
+export const eraseLocalDb = (userId) => (userId ? deleteDB(dbName(userId)).catch(() => {}) : Promise.resolve());
+
 const db = () => dbPromise ?? Promise.resolve(null);
 
 // ------------------------------------------------------------------ messages

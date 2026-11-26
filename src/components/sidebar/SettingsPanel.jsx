@@ -12,6 +12,7 @@ import { clearDownloadedMedia, mediaUsage } from '../../lib/localdb.js';
 import { requestNotificationPermission } from '../../lib/notify.js';
 import { backUpNow, backupAvailable, backupState, setBackupEnabled } from '../../lib/googleBackup.js';
 import { useChat } from '../../store/chat.js';
+import { restoreChats } from './RestoreOffer.jsx';
 import { useAuth } from '../../store/auth.js';
 import { MEDIA_KINDS, WALLPAPERS, toast, useUI } from '../../store/ui.js';
 
@@ -226,6 +227,18 @@ function GoogleBackup({ user }) {
         onChange={toggle}
       />
       {progress && <p className="hint">{progress}</p>}
+      {available && !progress && (
+        <button
+          className="btn btn-ghost"
+          onClick={async () => {
+            setProgress('Restoring from Google Drive…');
+            await restoreChats(user.id);
+            setProgress(null);
+          }}
+        >
+          Restore chats from Google Drive
+        </button>
+      )}
       {state.enabled && !progress && (
         <div className="backup-status">
           <span className="hint">
@@ -282,7 +295,6 @@ function MyChatLink({ user }) {
 export default function SettingsPanel() {
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
-  const logout = useAuth((s) => s.logout);
   const { theme, wallpaper, enterToSend, sounds, autoDownloadRules, saveOffline, setPref } = useUI();
 
   async function update(body) {
@@ -442,7 +454,7 @@ export default function SettingsPanel() {
         </button>
       </div>
 
-      <button className="btn btn-danger-ghost btn-block logout" onClick={logout}>
+      <button className="btn btn-danger-ghost btn-block logout" onClick={() => useUI.getState().setLogoutOpen(true)}>
         <LogOut size={18} /> Log out
       </button>
     </SidePanel>
