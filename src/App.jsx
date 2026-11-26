@@ -19,6 +19,7 @@ import GroupCallOverlay from './components/call/GroupCallOverlay.jsx';
 import { useGroupCall } from './store/groupCall.js';
 import MediaViewer from './components/common/MediaViewer.jsx';
 import ForwardDialog from './components/chat/ForwardDialog.jsx';
+import ShareTargetDialog from './components/chat/ShareTargetDialog.jsx';
 import PhoneMenu from './components/chat/PhoneMenu.jsx';
 import Toasts from './components/common/Toasts.jsx';
 import InAppBanner from './components/common/InAppBanner.jsx';
@@ -175,6 +176,7 @@ function Messenger({ token }) {
       <GroupCallOverlay />
       <MediaViewer />
       <ForwardDialog />
+      <ShareTargetDialog />
       <PhoneMenu />
       <InAppBanner />
       <ProfilePreview />

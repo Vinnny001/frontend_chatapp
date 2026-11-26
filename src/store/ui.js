@@ -34,6 +34,10 @@ export const useUI = create((set, get) => ({
   autoDownloadRules: storage.get('ui.autoDownloadRules', DEFAULT_AUTO_DOWNLOAD),
   // Keep every chat's whole history on the device (read offline). On by default.
   saveOffline: storage.get('ui.saveOffline', true),
+  // Per chat "Save chat for offline" (each chat's toggle in its info; on unless turned off).
+  offlineChats: storage.get('ui.offlineChats', {}), // { convId: true|false }
+  // Share sheet → ChatApp: what another app shared, waiting for a chat to be picked.
+  incomingShare: null, // { files: File[], text }
   // Sidebar overlay panels: newChat | newGroup | settings | starred | profile
   panel: null,
   infoOpen: false,
@@ -74,6 +78,12 @@ export const useUI = create((set, get) => ({
   setJoinCode: (joinCode) => set({ joinCode }),
   setViewOnce: (viewOnce) => set({ viewOnce }),
   setLogoutOpen: (logoutOpen) => set({ logoutOpen }),
+  setIncomingShare: (incomingShare) => set({ incomingShare }),
+  setChatOffline(convId, on) {
+    const offlineChats = { ...get().offlineChats, [convId]: !!on };
+    storage.set('ui.offlineChats', offlineChats);
+    set({ offlineChats });
+  },
 
   toast(message, kind = 'info') {
     const id = ++toastId;
@@ -83,3 +93,6 @@ export const useUI = create((set, get) => ({
 }));
 
 export const toast = (message, kind) => useUI.getState().toast(message, kind);
+
+/** Is this chat kept on the device for offline use? (Its own toggle, else "Keep chats offline", on by default.) */
+export const chatKeptOffline = (convId, s = useUI.getState()) => s.offlineChats[convId] ?? s.saveOffline;

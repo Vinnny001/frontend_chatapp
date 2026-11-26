@@ -154,6 +154,15 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     }
   }, [droppedFiles, onDroppedHandled]);
 
+  // Shared to ChatApp from another app (this chat was picked): the files, ready to send.
+  const [sharedCaption, setSharedCaption] = useState('');
+  useEffect(() => {
+    if (!state.sharedAt || !state.sharedFiles?.length) return;
+    setSharedCaption(state.sharedCaption || '');
+    setFiles(state.sharedFiles);
+    setComposer(conv.id, { sharedFiles: null, sharedCaption: null, sharedAt: null });
+  }, [state.sharedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-grow the textarea.
   useEffect(() => {
     const el = input.current;
@@ -467,7 +476,22 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           }}
         />
       )}
-      {files && <AttachmentPreview files={files} conv={conv} me={me} onCancel={() => setFiles(null)} onSend={sendFiles} />}
+      {files && (
+        <AttachmentPreview
+          files={files}
+          conv={conv}
+          me={me}
+          initialCaption={sharedCaption}
+          onCancel={() => {
+            setFiles(null);
+            setSharedCaption('');
+          }}
+          onSend={(...args) => {
+            setSharedCaption('');
+            sendFiles(...args);
+          }}
+        />
+      )}
     </div>
   );
 }

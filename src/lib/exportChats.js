@@ -1,7 +1,6 @@
 import { api } from './api.js';
 import { allStoredMessages } from './localdb.js';
 import { plainMentions } from './mentions.js';
-import { saveOrShareFile } from './share.js';
 import * as e2ee from './e2ee/index.js';
 import { conversationTitle } from '../store/chat.js';
 
@@ -120,9 +119,41 @@ export async function buildExport(convs, me, { range = {}, onProgress, restore =
   return { blob: new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), name, data };
 }
 
-/** Exports and hands the file to the user (download on the web, share sheet on the phone). */
-export async function exportChats(convs, me, options) {
-  const { blob, name } = await buildExport(convs, me, options);
-  await saveOrShareFile(blob, name, { title: 'Export chat' });
-  return name;
+/** The restore records in an export / backup file: [id, { p, fp, conv, sender, at }]. */
+export function restoreRecords(data) {
+  const records = [];
+  for (const chat of data?.chats || []) {
+    for (const m of chat?.messages || []) {
+      if (m?.restore) records.push([m.id, { ...m.restore, conv: chat.id, sender: m.sender?.id || null, at: m.sentAt }]);
+    }
+  }
+  return records;
 }
+
+/**
+ * "Import chats": reads an export file (from this or another device) and makes its messages
+ * readable here again: ones that show "Sent before this device was linked" or couldn't be
+ * decrypted. Only chats you're still in show them. → { chats, messages, restored, readable }.
+ */
+export async function importChats(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    throw new Error('This isn’t a ChatApp export file.');
+  }
+  if (data?.app !== 'ChatApp' || !Array.isArray(data.chats)) throw new Error('This isn’t a ChatApp export file.');
+  const records = restoreRecords(data);
+  const messages = data.chats.reduce((n, c) => n + (c.messages?.length || 0), 0);
+  if (messages && !records.length) {
+    throw new Error('This export was made by an older version of ChatApp and can only be read, not imported. Export the chat again.');
+  }
+  const restored = e2ee.importRestored(records);
+  return { chats: data.chats.length, messages, restored, readable: records.length };
+}
+
+/**
+ * Exports, including what's needed to import the chats again on another device (or after
+ * erasing this one): the same file can be read by people and by "Import chats".
+ */
+export const exportChats = (convs, me, options) => buildExport(convs, me, { ...options, restore: true });

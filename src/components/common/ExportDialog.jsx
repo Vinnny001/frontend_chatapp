@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
+import { FileJson, FolderDown, Share2 } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import Modal from './Modal.jsx';
 import { exportChats } from '../../lib/exportChats.js';
+import { formatBytes } from '../../lib/format.js';
+import { canShareFiles, saveToDevice, shareFile } from '../../lib/share.js';
 import { useAuth } from '../../store/auth.js';
 import { chatAvatarUrl, conversationTitle, useChat } from '../../store/chat.js';
 import { toast } from '../../store/ui.js';
@@ -12,6 +15,7 @@ const day = (d) => d.toISOString().slice(0, 10);
  * Export chats as JSON (made on this device: messages are end-to-end encrypted).
  *  - `conv` given (from a chat's info): that chat, the whole of it or between two dates.
  *  - no `conv` (from the chat list menu): pick some chats or all of them; whole history.
+ * Once made, the file is saved on the phone (Files app) or shared to another app.
  */
 export default function ExportDialog({ conv, onClose }) {
   const me = useAuth((s) => s.user?.id);
@@ -28,8 +32,10 @@ export default function ExportDialog({ conv, onClose }) {
   const [to, setTo] = useState(() => day(new Date()));
   const [picked, setPicked] = useState(() => new Set());
   const [progress, setProgress] = useState(null); // { done, total }
+  const [file, setFile] = useState(null); // { blob, name } once made
+  const [handing, setHanding] = useState(false);
 
-  const busy = !!progress;
+  const busy = !!progress || handing;
   const allPicked = chats.length > 0 && picked.size === chats.length;
   const toggle = (id) =>
     setPicked((s) => {
@@ -47,14 +53,72 @@ export default function ExportDialog({ conv, onClose }) {
     const range = conv && !whole ? { from: new Date(`${from}T00:00:00`).toISOString(), to: new Date(`${to}T23:59:59.999`).toISOString() } : {};
     setProgress({ done: 0, total: list.length });
     try {
-      const name = await exportChats(list, me, { range, onProgress: (done, total) => setProgress({ done, total }) });
-      toast(`Exported: ${name}`);
-      onClose();
+      const { blob, name } = await exportChats(list, me, { range, onProgress: (done, total) => setProgress({ done, total }) });
+      setFile({ blob, name });
     } catch (e) {
       toast(e.message || 'Export failed', 'error');
-      setProgress(null);
     }
+    setProgress(null);
     return undefined;
+  }
+
+  async function save() {
+    setHanding(true);
+    try {
+      const where = await saveToDevice(file.blob, file.name);
+      if (where) toast(`Saved to ${where}: ${file.name}`);
+      onClose();
+    } catch (e) {
+      if (e?.code !== 'CANCELLED' && e?.message !== 'Cancelled') toast(e.message || 'Couldn’t save the file', 'error');
+    }
+    setHanding(false);
+  }
+
+  async function share() {
+    setHanding(true);
+    try {
+      await shareFile(file.blob, file.name, { title: 'Export chat' });
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+    setHanding(false);
+  }
+
+  if (file) {
+    return (
+      <Modal
+        title="Chat exported"
+        onClose={handing ? () => {} : onClose}
+        className="export-dialog"
+        footer={
+          <button className="btn btn-ghost" onClick={onClose} disabled={handing}>
+            Done
+          </button>
+        }
+      >
+        <div className="export-file">
+          <FileJson size={34} />
+          <span>
+            <strong>{file.name}</strong>
+            <small>{formatBytes(file.blob.size)}</small>
+          </span>
+        </div>
+        <div className="export-actions">
+          <button className="btn btn-primary" onClick={save} disabled={handing}>
+            <FolderDown size={18} /> Save to phone
+          </button>
+          {canShareFiles() && (
+            <button className="btn btn-ghost" onClick={share} disabled={handing}>
+              <Share2 size={18} /> Share
+            </button>
+          )}
+        </div>
+        <p className="hint">
+          “Save to phone” puts it in Downloads/ChatApp, where your Files app finds it. To read the chats in ChatApp again
+          (on another device, or after erasing this one), use “Import chats” in the chat list menu.
+        </p>
+      </Modal>
+    );
   }
 
   return (
@@ -68,7 +132,7 @@ export default function ExportDialog({ conv, onClose }) {
             Cancel
           </button>
           <button className="btn btn-primary" onClick={run} disabled={busy || (!conv && !picked.size)}>
-            {busy ? (progress.total > 1 ? `Exporting ${progress.done + 1} of ${progress.total}…` : 'Exporting…') : 'Export'}
+            {progress ? (progress.total > 1 ? `Exporting ${progress.done + 1} of ${progress.total}…` : 'Exporting…') : 'Export'}
           </button>
         </>
       }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, CircleDashed, Download, HelpCircle, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
+import { Archive, CircleDashed, Download, FileUp, HelpCircle, Images, LogOut, Shield, MessageSquarePlus, MoreVertical, Phone, Search, Settings, Star, Users, X } from 'lucide-react';
 import CallsPanel from './CallsPanel.jsx';
 import BlockedPanel from './BlockedPanel.jsx';
 import DevicesPanel from './DevicesPanel.jsx';
@@ -8,6 +8,7 @@ import SharedBrowser from '../common/SharedBrowser.jsx';
 import Avatar from '../common/Avatar.jsx';
 import Menu from '../common/Menu.jsx';
 import ExportDialog from '../common/ExportDialog.jsx';
+import { pickAndImportChats } from '../common/importChats.js';
 import ConversationItem from './ConversationItem.jsx';
 import RestoreOffer from './RestoreOffer.jsx';
 import NewChatPanel from './NewChatPanel.jsx';
@@ -174,6 +175,7 @@ export default function Sidebar() {
             { label: 'Starred messages', icon: Star, onClick: () => openPanel('starred') },
             // (With no chat or chat info open: export several chats at once.)
             !activeId && !infoOpen && { label: 'Export chats', icon: Download, onClick: () => setExporting(true) },
+            !activeId && !infoOpen && { label: 'Import chats', icon: FileUp, onClick: pickAndImportChats },
             { label: 'Settings', icon: Settings, onClick: () => openPanel('settings') },
             { label: 'Help', icon: HelpCircle, onClick: () => openPanel('help') },
             { label: 'Log out', icon: LogOut, danger: true, onClick: () => useUI.getState().setLogoutOpen(true) },

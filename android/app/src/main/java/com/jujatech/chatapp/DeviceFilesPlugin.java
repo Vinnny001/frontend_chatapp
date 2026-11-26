@@ -1,14 +1,20 @@
 package com.jujatech.chatapp;
 
 import android.content.ActivityNotFoundException;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.StatFs;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Base64;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
@@ -18,8 +24,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * Files in the app's private storage that native code needs: documents opened in other apps
@@ -168,6 +177,88 @@ public class DeviceFilesPlugin extends Plugin {
             }
         } catch (Exception e) {
             call.reject("Could not share file", e);
+        }
+    }
+
+    private ActivityResultLauncher<String> createDocument;
+    private PluginCall savingCall;
+    private File savingFile;
+
+    @Override
+    public void load() {
+        // Android 7–9: the user picks where to save (Downloads by default); no storage permission.
+        createDocument = getActivity().registerForActivityResult(new ActivityResultContracts.CreateDocument("*/*"), uri -> {
+            PluginCall call = savingCall;
+            File file = savingFile;
+            savingCall = null;
+            savingFile = null;
+            if (call == null) return;
+            if (uri == null) {
+                call.reject("Cancelled", "CANCELLED");
+                return;
+            }
+            try (OutputStream out = getContext().getContentResolver().openOutputStream(uri)) {
+                copy(file, out);
+                JSObject result = new JSObject();
+                result.put("location", "the folder you chose");
+                call.resolve(result);
+            } catch (Exception e) {
+                call.reject("Couldn’t save the file", e);
+            }
+        });
+    }
+
+    /**
+     * Saves a file from the app's storage into the phone's Downloads/ChatApp folder, where the
+     * Files app (and any other app) can find it. { path, name, mime } → { location }.
+     */
+    @PluginMethod
+    public void saveToDownloads(PluginCall call) {
+        String name = call.getString("name", "ChatApp file");
+        String mime = call.getString("mime", "application/octet-stream");
+        try {
+            File file = resolve(getContext(), call.getString("path"));
+            if (!file.isFile()) {
+                call.reject("File not found");
+                return;
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                savingCall = call;
+                savingFile = file;
+                createDocument.launch(name);
+                return;
+            }
+            ContentResolver resolver = getContext().getContentResolver();
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ChatApp");
+            values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+            Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new IOException("Downloads unavailable");
+            try (OutputStream out = resolver.openOutputStream(uri)) {
+                copy(file, out);
+            } catch (IOException e) {
+                resolver.delete(uri, null, null);
+                throw e;
+            }
+            values.clear();
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            resolver.update(uri, values, null, null);
+            JSObject result = new JSObject();
+            result.put("location", "Downloads/ChatApp");
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Couldn’t save the file to Downloads", e);
+        }
+    }
+
+    private static void copy(File from, OutputStream out) throws IOException {
+        if (out == null) throw new IOException("No output");
+        try (InputStream in = new FileInputStream(from)) {
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
         }
     }
 

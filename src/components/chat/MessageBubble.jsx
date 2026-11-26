@@ -118,13 +118,16 @@ async function openProfile(userId) {
 /** A photo, video, voice note or document from a chat, to another app (WhatsApp, Gmail...). */
 async function shareMedia(msg) {
   const { media } = msg;
+  // (A big file takes a moment to hand over: say so straight away.)
+  if ((media.size || 0) > 2 * 1024 * 1024) toast('Preparing to share…');
   try {
-    const blob = String(media.url).startsWith('blob:') ? await fetch(media.url).then((r) => r.blob()) : await ensureMedia(media.url);
+    const local = String(media.url).startsWith('blob:');
+    const blob = local ? await fetch(media.url).then((r) => r.blob()) : await ensureMedia(media.url);
     if (!blob) return toast('Couldn’t download it. Check your connection.', 'error');
     const ext = { image: 'jpg', video: 'mp4', voice: 'webm', audio: 'mp3' }[msg.type] || 'bin';
     const name = media.name || `ChatApp ${msg.type} ${msg.createdAt.slice(0, 10)}.${ext}`;
     const typed = blob.type ? blob : new Blob([blob], { type: media.mime || 'application/octet-stream' });
-    await shareFile(typed, name, { title: 'Share' });
+    await shareFile(typed, name, { title: 'Share', key: local ? undefined : media.url });
   } catch (err) {
     toast(err.message, 'error');
   }

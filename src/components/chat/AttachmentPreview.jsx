@@ -4,8 +4,8 @@ import { fileKind, formatBytes } from '../../lib/format.js';
 import { OnceIcon } from './ViewOnce.jsx';
 import { useMentions } from './useMentions.jsx';
 
-export default function AttachmentPreview({ files, conv, me, onCancel, onSend }) {
-  const [caption, setCaption] = useState('');
+export default function AttachmentPreview({ files, conv, me, onCancel, onSend, initialCaption = '' }) {
+  const [caption, setCaption] = useState(initialCaption);
   const input = useRef(null);
   const backdrop = useRef(null);
   // @mentions in the caption, as in the message box.

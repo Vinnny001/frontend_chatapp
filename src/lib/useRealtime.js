@@ -20,6 +20,19 @@ import * as e2ee from './e2ee/index.js';
 import { useStatus } from '../store/status.js';
 import { supportUpdated } from './supportEvents.js';
 import { tokenDeviceId } from './device.js';
+import { receiveShare } from '../components/chat/ShareTargetDialog.jsx';
+
+/** Resolves once the chat list has loaded (from the server or this device's copy). */
+const whenChatsLoaded = () =>
+  new Promise((resolve) => {
+    if (useChat.getState().loaded) return resolve();
+    const off = useChat.subscribe((s) => {
+      if (!s.loaded) return;
+      off();
+      resolve();
+    });
+    return undefined;
+  });
 
 /** Owns the realtime connection for the signed-in session and routes events into the stores. */
 /**
@@ -86,7 +99,10 @@ export function useRealtime(session) {
       chat.ensureConversation(conversationId).then(() => chat.openConversation(conversationId)).catch(() => {});
     };
     cleanups.push(
-      onNativeAction(({ action, conversationId, callId, locked, returnAfter, group }) => {
+      onNativeAction((data) => {
+        const { action, conversationId, callId, locked, returnAfter, group } = data;
+        // Shared to ChatApp from another app: pick a chat (once the chat list is there).
+        if (action === 'share') whenChatsLoaded().then(() => receiveShare(data));
         if (action === 'open' && conversationId) openChat(conversationId);
         // "Answer" on the ringing notification: pick up as soon as the call reaches the app.
         if (action === 'answer' && callId && group) {

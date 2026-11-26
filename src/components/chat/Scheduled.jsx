@@ -39,10 +39,16 @@ export function formatWhen(iso) {
   return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
 }
 
-/** Picks a time (presets or any date/time up to 30 days ahead). */
+/**
+ * Picks when to send: a preset, or any date and time (up to 30 days ahead). Separate date and
+ * time fields open the phone's own calendar and clock pickers.
+ */
 function WhenPicker({ value, onChange }) {
-  const min = localInput(new Date(Date.now() + 60_000));
-  const max = localInput(new Date(Date.now() + MAX_DAYS * 864e5 - 60_000));
+  const [date, time] = value.split('T');
+  const minDay = localInput(new Date()).slice(0, 10);
+  const maxDay = localInput(new Date(Date.now() + MAX_DAYS * 864e5 - 60_000)).slice(0, 10);
+  const at = new Date(value);
+  const valid = !Number.isNaN(+at) && +at > Date.now() + 30_000;
   return (
     <div className="when-picker">
       <div className="when-presets">
@@ -52,7 +58,19 @@ function WhenPicker({ value, onChange }) {
           </button>
         ))}
       </div>
-      <input type="datetime-local" value={value} min={min} max={max} onChange={(e) => onChange(e.target.value)} aria-label="Send at" />
+      <div className="when-fields">
+        <label>
+          Date
+          <input type="date" value={date} min={minDay} max={maxDay} onChange={(e) => e.target.value && onChange(`${e.target.value}T${time}`)} />
+        </label>
+        <label>
+          Time
+          <input type="time" value={time} onChange={(e) => e.target.value && onChange(`${date}T${e.target.value}`)} />
+        </label>
+      </div>
+      <p className={`when-summary ${valid ? '' : 'invalid'}`}>
+        {valid ? `Sends ${formatWhen(at.toISOString())}` : 'Choose a time in the future'}
+      </p>
     </div>
   );
 }
@@ -74,12 +92,16 @@ export function ScheduleDialog({ conv, text: initialText = '', replyTo, toTokens
     if (+at > Date.now() + MAX_DAYS * 864e5) return toast(`Messages can be scheduled up to ${MAX_DAYS} days ahead`);
     setBusy(true);
     try {
-      await useChat.getState().scheduleMessage(conv.id, { text: toTokens(body), replyTo }, at);
-      toast(`Scheduled for ${formatWhen(at.toISOString())}`);
+      const item = await useChat.getState().scheduleMessage(conv.id, { text: toTokens(body), replyTo }, at);
+      toast(
+        item?.local
+          ? `Scheduled for ${formatWhen(at.toISOString())}. You’re offline: it’s handed over as soon as you’re connected.`
+          : `Scheduled for ${formatWhen(at.toISOString())}`
+      );
       onScheduled?.();
       onClose();
     } catch (e) {
-      toast(e.status === 0 ? 'Connect to the internet to schedule a message.' : e.message, 'error');
+      toast(e.message, 'error');
       setBusy(false);
     }
     return undefined;
@@ -103,7 +125,9 @@ export function ScheduleDialog({ conv, text: initialText = '', replyTo, toTokens
     >
       <textarea autoFocus rows={3} maxLength={65536} value={text} onChange={(e) => setText(e.target.value)} placeholder="Message" aria-label="Message to schedule" />
       <WhenPicker value={when} onChange={setWhen} />
-      <p className="hint">It’s sent at that time even if your phone is off. Only you see it until then.</p>
+      <p className="hint">
+        It’s sent at that time even if your phone is off or offline then. Only you see it until then.
+      </p>
     </Modal>
   );
 }
@@ -154,6 +178,11 @@ function ScheduledRow({ item, conv, me }) {
       <div className="scheduled-meta">
         <Clock size={14} /> {formatWhen(item.sendAt)}
         {item.state === 'failed' && <span className="scheduled-error">Not sent: {item.error || 'failed'}</span>}
+        {item.state === 'waiting' && (
+          <span className="scheduled-waiting">
+            Waiting for a connection{Date.parse(item.sendAt) < Date.now() ? ' · sends as soon as you’re online' : ''}
+          </span>
+        )}
       </div>
       {editing ? (
         <div className="scheduled-edit">

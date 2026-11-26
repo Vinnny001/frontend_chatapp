@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { buildExport } from './exportChats.js';
+import { buildExport, restoreRecords } from './exportChats.js';
 import { storage } from './storage.js';
 import * as e2ee from './e2ee/index.js';
 
@@ -16,9 +16,25 @@ const DAY_MS = 24 * 3600 * 1000;
 const native = () => Capacitor.getPlatform() === 'android';
 const WEB_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
+/** How often to back up, as WhatsApp asks. ('off': never.) */
+export const FREQUENCIES = [
+  { id: 'off', label: 'Never' },
+  { id: 'manual', label: 'Only when I tap “Back up”' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'monthly', label: 'Monthly' },
+];
+const EVERY = { daily: DAY_MS, weekly: 7 * DAY_MS, monthly: 30 * DAY_MS };
+
 const key = (userId) => `backup.${userId}`;
-/** { enabled, lastAt, lastError } for this account on this device. */
-export const backupState = (userId) => ({ enabled: false, lastAt: null, lastError: null, ...(storage.get(key(userId)) || {}) });
+/** { enabled, frequency, lastAt, lastError } for this account on this device. */
+export function backupState(userId) {
+  const s = { enabled: false, lastAt: null, lastError: null, ...(storage.get(key(userId)) || {}) };
+  // (Backups turned on before there was a choice were daily.)
+  s.frequency ||= s.enabled ? 'daily' : 'off';
+  s.enabled = s.frequency !== 'off';
+  return s;
+}
 const saveState = (userId, patch) => storage.set(key(userId), { ...backupState(userId), ...patch });
 
 /** Can this device back up to Google at all? */
@@ -42,6 +58,11 @@ function loadGis() {
   });
   return gisLoading;
 }
+
+/** Web: loads Google's sign-in script ahead of a tap, so its window isn't blocked as a pop-up. */
+export const prepareBackup = () => {
+  if (!native() && WEB_CLIENT_ID) loadGis().catch(() => {});
+};
 
 async function webAccessToken(interactive) {
   if (webToken && webToken.expiresAt > Date.now() + 60_000) return webToken.token;
@@ -142,34 +163,37 @@ export async function restoreFromBackup({ me, interactive = true }) {
   if (!file) throw Object.assign(new Error('No ChatApp backup found in this Google account'), { code: 'NO_BACKUP' });
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Couldn’t download the backup (${res.status})`);
-  const data = await res.json();
-  const records = [];
-  for (const chat of data.chats || []) {
-    for (const m of chat.messages || []) {
-      if (m.restore) records.push([m.id, { ...m.restore, conv: chat.id, sender: m.sender?.id || null, at: m.sentAt }]);
-    }
-  }
-  const restored = e2ee.importRestored(records);
+  const restored = e2ee.importRestored(restoreRecords(await res.json()));
   storage.set(`backup.restored.${me}`, new Date().toISOString());
   return { restored, backupAt: file.modifiedTime };
 }
 
-/** Turns backup on (asks Google for access, then backs up) or off. */
-export async function setBackupEnabled({ enabled, chats, me, onProgress }) {
-  if (!enabled) {
-    saveState(me, { enabled: false });
+/**
+ * Sets how often to back up. Turning it on (from "Never") asks Google for access and makes the
+ * first backup straight away. → the backup made, or null.
+ */
+export async function setBackupFrequency({ frequency, chats, me, onProgress }) {
+  if (frequency === 'off' || backupState(me).enabled) {
+    saveState(me, { frequency, enabled: frequency !== 'off' });
     return null;
   }
   const result = await backUpNow({ chats, me, interactive: true, onProgress });
-  saveState(me, { enabled: true });
+  saveState(me, { frequency, enabled: true });
   return result;
 }
 
-/** Daily backup in the background (when on, online, and the last one is a day old). */
+/** When the next automatic backup is due (null: none, manual or off). */
+export function nextBackupAt(userId) {
+  const { frequency, lastAt } = backupState(userId);
+  if (!EVERY[frequency]) return null;
+  return lastAt ? Date.parse(lastAt) + EVERY[frequency] : Date.now();
+}
+
+/** The automatic backup in the background (daily / weekly / monthly, when due and online). */
 export async function backUpIfDue({ chats, me }) {
-  const state = backupState(me);
-  if (!state.enabled || !backupAvailable() || navigator.onLine === false) return;
-  if (state.lastAt && Date.now() - Date.parse(state.lastAt) < DAY_MS) return;
+  const due = nextBackupAt(me);
+  if (due == null || !backupAvailable() || navigator.onLine === false) return;
+  if (Date.now() < due) return;
   // Web: a silent token needs Google's script, which shows nothing when access was given.
   await backUpNow({ chats, me, interactive: false }).catch(() => {});
 }

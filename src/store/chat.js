@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api, uploadFile } from '../lib/api.js';
 import { emitAck, emitVolatile, getSocket } from '../lib/socket.js';
-import { cancelBackground, queueInBackground, sendPayload, takeDeliveredInBackground } from '../lib/outbox.js';
+import { cancelBackground, queueInBackground, queueRequestInBackground, sendPayload, takeDeliveredInBackground } from '../lib/outbox.js';
 import { uid } from '../lib/format.js';
 import {
   deleteStoredConversation,
@@ -27,7 +27,7 @@ import { useContactMatches } from '../lib/contacts.js';
 import { displayName, knownPhone, savedNames, usePeople } from './people.js';
 import { useAuth } from './auth.js';
 import { useCall } from './call.js';
-import { toast, useUI } from './ui.js';
+import { chatKeptOffline, toast, useUI } from './ui.js';
 
 const meId = () => useAuth.getState().user?.id;
 const ts = (v) => (v ? Date.parse(v) : 0);
@@ -74,6 +74,11 @@ const scheduledTextKey = () => `chat.scheduledText.${meId()}`;
 const scheduledTexts = () => storage.get(scheduledTextKey()) || {};
 const withText = (x) => ({ ...x, text: scheduledTexts()[x.clientId] ?? null });
 const sortScheduled = (list) => [...list].sort((a, b) => Date.parse(a.sendAt) - Date.parse(b.sendAt));
+// Scheduled while offline, not on the server yet: [{ convId, clientId, body }].
+const scheduledQueueKey = () => `chat.scheduledQueue.${meId()}`;
+const scheduledQueue = () => storage.get(scheduledQueueKey()) || [];
+const queuedItem = (q) =>
+  withText({ id: `local:${q.clientId}`, conversationId: q.convId, clientId: q.clientId, sendAt: q.body.sendAt, state: 'waiting', local: true });
 
 /** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
 const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
@@ -381,14 +386,15 @@ export const useChat = create((set, get) => {
       // 'Keep chats offline' (on by default): then the older history of every chat too, so
       // messages already read open without a connection. A page at a time, quietly.
       for (const c of chats) {
-        if (!useUI.getState().saveOffline) return;
+        if (!chatKeptOffline(c.id)) continue; // this chat's "Save chat for offline" is off
         let before = historyDone()[c.id];
         if (before === true) continue;
         before ||= await oldestStoredAt(c.id);
         if (!before) continue; // nothing on the device yet: the catch-up above comes first
         for (;;) {
           while (busy() && current()) await sleep(700);
-          if (!current() || !useUI.getState().saveOffline) return;
+          if (!current()) return;
+          if (!chatKeptOffline(c.id)) break;
           let data;
           try {
             data = await api(`/api/conversations/${c.id}/messages?${new URLSearchParams({ limit: '100', before })}`);
@@ -723,42 +729,100 @@ export const useChat = create((set, get) => {
     async scheduleMessage(convId, { text, replyTo }, sendAt) {
       if (!e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be scheduled.');
       const clientId = uid();
+      const at = new Date(sendAt).toISOString();
       const payload = contentForEncryption({ type: 'text', text });
-      const out = await e2ee.encryptMessage(convId, payload);
+      // (Offline too: it's encrypted now with this device's keys.)
+      const out = await e2ee.encryptMessage(convId, payload, { offline: !isOnline() });
       if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
-      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: convId, sender: meId(), at: new Date(sendAt).toISOString() }, out.missing);
+      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: convId, sender: meId(), at }, out.missing);
       const message = sendPayload({ clientId, e2eeOut: { ...out, payload }, replyTo: replyTo ? { id: replyTo.id } : null });
       storage.set(scheduledTextKey(), { ...scheduledTexts(), [clientId]: text });
-      const { scheduled } = await api(`/api/conversations/${convId}/scheduled`, {
-        method: 'POST',
-        body: { sendAt: new Date(sendAt).toISOString(), message },
-      });
-      set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled([...(s.scheduled[convId] || []), withText(scheduled)]) } }));
-      return scheduled;
+      const body = { sendAt: at, message };
+      try {
+        const { scheduled } = await api(`/api/conversations/${convId}/scheduled`, { method: 'POST', body });
+        if (!scheduled) return null; // (already sent)
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled([...(s.scheduled[convId] || []), withText(scheduled)]) } }));
+        return scheduled;
+      } catch (e) {
+        if (!isNetworkError(e)) throw e;
+        // No connection: kept on this device and handed to the server as soon as there's one
+        // (on a phone even with the app closed). If the time has passed by then, it goes at once.
+        const item = { convId, clientId, body };
+        storage.set(scheduledQueueKey(), [...scheduledQueue().filter((q) => q.clientId !== clientId), item]);
+        queueRequestInBackground(`sched-${clientId}`, `/api/conversations/${convId}/scheduled`, { ...body, offline: true }, authToken());
+        const local = queuedItem(item);
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled([...(s.scheduled[convId] || []), local]) } }));
+        return local;
+      }
+    },
+
+    /** Back online: hands messages scheduled while offline to the server. */
+    async flushScheduledQueue() {
+      for (const item of scheduledQueue()) {
+        try {
+          await api(`/api/conversations/${item.convId}/scheduled`, { method: 'POST', body: { ...item.body, offline: true } });
+        } catch (e) {
+          if (isNetworkError(e)) return; // still offline: next time
+          // Refused (left the group...): show it as failed rather than lose it silently.
+          toast(`A scheduled message couldn’t be sent: ${e.message}`, 'error');
+        }
+        storage.set(scheduledQueueKey(), scheduledQueue().filter((q) => q.clientId !== item.clientId));
+        cancelBackground(`sched-${item.clientId}`);
+        get().loadScheduled(item.convId);
+      }
     },
 
     /** My scheduled messages in a chat (from the server; their text from this device). */
     async loadScheduled(convId) {
       try {
         const { scheduled } = await api(`/api/conversations/${convId}/scheduled`);
-        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled(scheduled.map(withText)) } }));
-        // Forget the text of ones already sent.
-        const live = new Set(Object.values(get().scheduled).flat().map((x) => x.clientId));
-        const texts = scheduledTexts();
-        const kept = Object.fromEntries(Object.entries(texts).filter(([id]) => live.has(id)));
-        if (Object.keys(kept).length !== Object.keys(texts).length && Object.keys(get().scheduled).length) storage.set(scheduledTextKey(), kept);
+        // (Plus any made offline that haven't reached the server yet.)
+        const waiting = scheduledQueue()
+          .filter((q) => q.convId === convId && !scheduled.some((x) => x.clientId === q.clientId))
+          .map(queuedItem);
+        const before = get().scheduled[convId] || [];
+        const list = sortScheduled([...scheduled.map(withText), ...waiting]);
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: list } }));
+        // Forget the text of this chat's ones that have gone (sent or deleted).
+        const live = new Set(list.map((x) => x.clientId));
+        const gone = before.filter((x) => !live.has(x.clientId)).map((x) => x.clientId);
+        if (gone.length) {
+          const texts = scheduledTexts();
+          for (const id of gone) delete texts[id];
+          storage.set(scheduledTextKey(), texts);
+        }
       } catch {
         /* offline: keep what's shown */
       }
     },
 
     async rescheduleMessage(convId, id, sendAt) {
+      const local = scheduledQueue().find((q) => `local:${q.clientId}` === id);
+      if (local) {
+        // Not on the server yet: change it here (and in the phone's background sender).
+        local.body.sendAt = new Date(sendAt).toISOString();
+        storage.set(scheduledQueueKey(), scheduledQueue().map((q) => (q.clientId === local.clientId ? local : q)));
+        await cancelBackground(`sched-${local.clientId}`);
+        queueRequestInBackground(`sched-${local.clientId}`, `/api/conversations/${convId}/scheduled`, { ...local.body, offline: true }, authToken());
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? queuedItem(local) : x))) } }));
+        return;
+      }
       const { scheduled } = await api(`/api/conversations/${convId}/scheduled/${id}`, { method: 'PATCH', body: { sendAt: new Date(sendAt).toISOString() } });
       set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? withText(scheduled) : x))) } }));
     },
 
     async cancelScheduled(convId, id) {
-      await api(`/api/conversations/${convId}/scheduled/${id}`, { method: 'DELETE' });
+      const local = scheduledQueue().find((q) => `local:${q.clientId}` === id);
+      if (local) {
+        storage.set(scheduledQueueKey(), scheduledQueue().filter((q) => q.clientId !== local.clientId));
+        await cancelBackground(`sched-${local.clientId}`);
+        // (The background sender may have handed it over just now: delete it there too.)
+        const { scheduled = [] } = await api(`/api/conversations/${convId}/scheduled`).catch(() => ({}));
+        const there = scheduled.find((x) => x.clientId === local.clientId);
+        if (there) await api(`/api/conversations/${convId}/scheduled/${there.id}`, { method: 'DELETE' }).catch(() => {});
+      } else {
+        await api(`/api/conversations/${convId}/scheduled/${id}`, { method: 'DELETE' });
+      }
       set((s) => ({ scheduled: { ...s.scheduled, [convId]: (s.scheduled[convId] || []).filter((x) => x.id !== id) } }));
     },
 
@@ -920,6 +984,7 @@ export const useChat = create((set, get) => {
       for (const t of Object.values(get().threads)) {
         for (const m of t.items) if (m.pending && m.status === 'pending') get().deliver(m);
       }
+      if (isOnline()) get().flushScheduledQueue();
     },
 
     /** Hands every queued message to the Android background sender (app going to background). */

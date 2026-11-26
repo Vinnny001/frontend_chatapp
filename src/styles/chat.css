@@ -1817,8 +1817,32 @@ button.mention.me {
   gap: 6px;
   flex-wrap: wrap;
 }
-.when-picker input[type='datetime-local'] {
+.when-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.when-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.when-fields input {
   width: 100%;
+  min-width: 0;
+  font-size: 16px;
+}
+.when-summary {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--accent);
+}
+.when-summary.invalid {
+  color: var(--danger, #d93025);
+}
+.scheduled-waiting {
+  color: var(--text-3);
 }
 .scheduled-list ul {
   list-style: none;

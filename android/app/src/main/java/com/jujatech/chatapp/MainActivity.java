@@ -2,6 +2,7 @@ package com.jujatech.chatapp;
 
 import android.app.KeyguardManager;
 import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -16,6 +17,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
 public class MainActivity extends BridgeActivity {
@@ -41,12 +43,64 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GoogleDrivePlugin.class);
         super.onCreate(savedInstanceState);
         handleNotificationIntent(getIntent());
+        if (savedInstanceState == null) handleShareIntent(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         handleNotificationIntent(intent);
+        handleShareIntent(intent);
+    }
+
+    /**
+     * Something shared to ChatApp from another app. The files are copied into the app's own
+     * storage (other apps' links stop working once they lose access), then the web app asks
+     * which chat to send them to.
+     */
+    private void handleShareIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
+        intent.setAction(Intent.ACTION_MAIN); // don't take it again after a rotation
+        java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+        if (Intent.ACTION_SEND.equals(action)) {
+            Uri one = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (one != null) uris.add(one);
+        } else {
+            java.util.ArrayList<Uri> many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (many != null) uris.addAll(many);
+        }
+        if (uris.isEmpty() && intent.getClipData() != null) {
+            for (int i = 0; i < intent.getClipData().getItemCount(); i++) {
+                Uri u = intent.getClipData().getItemAt(i).getUri();
+                if (u != null) uris.add(u);
+            }
+        }
+        if (uris.isEmpty() && intent.getData() != null) uris.add(intent.getData());
+        CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+        String type = intent.getType();
+        new Thread(() -> {
+            SharedFiles.pruneIncoming(this);
+            JSArray files = new JSArray();
+            long stamp = System.currentTimeMillis();
+            int skipped = 0;
+            for (int i = 0; i < uris.size() && i < 30; i++) {
+                JSObject f = SharedFiles.copy(this, uris.get(i), type, "incoming/" + stamp + "/" + i);
+                if (f != null) files.put(f);
+                else skipped++;
+            }
+            JSObject data = new JSObject();
+            data.put("action", "share");
+            data.put("files", files);
+            data.put("skipped", skipped);
+            String body = text == null ? "" : text.toString();
+            // (A shared link often comes with its page title as the subject.)
+            if (subject != null && !subject.isEmpty() && !body.contains(subject) && files.length() == 0) body = subject + "\n" + body;
+            data.put("text", body.trim());
+            NativeSessionPlugin.deliver(data);
+        }).start();
     }
 
     @Override

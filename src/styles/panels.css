@@ -745,9 +745,19 @@ button.doc-row {
   color: var(--accent);
 }
 
+.save-offline {
+  cursor: pointer;
+}
+
 .save-offline span {
   display: grid;
   gap: 2px;
+  flex: 1;
+}
+
+.save-offline-all {
+  margin: 8px 0 0 34px;
+  font-size: 13px;
 }
 
 .save-offline strong {
@@ -1979,6 +1989,16 @@ button.composer-locked.blocked {
 .devices-none {
   padding: 0 16px;
 }
+.settings-link > span {
+  display: grid;
+  text-align: left;
+}
+
+.settings-link small {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
 .settings-link.danger {
   color: var(--danger);
 }
@@ -2956,6 +2976,66 @@ button.composer-locked.blocked {
   padding: 4px 0;
   cursor: pointer;
 }
+.share-target-what {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.share-target-files {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.share-target-what textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+
+.export-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-2, rgba(127, 127, 127, 0.08));
+  color: var(--accent);
+}
+
+.export-file span {
+  display: grid;
+  min-width: 0;
+  color: var(--text-1, inherit);
+}
+
+.export-file strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.export-file small {
+  color: var(--text-3);
+}
+
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+
+.export-actions .btn {
+  flex: 1;
+  justify-content: center;
+  gap: 8px;
+}
+
 .export-range {
   display: flex;
   gap: 12px;

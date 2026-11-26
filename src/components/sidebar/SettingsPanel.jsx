@@ -10,7 +10,9 @@ import { api } from '../../lib/api.js';
 import { formatBytes } from '../../lib/format.js';
 import { clearDownloadedMedia, mediaUsage } from '../../lib/localdb.js';
 import { requestNotificationPermission } from '../../lib/notify.js';
-import { backUpNow, backupAvailable, backupState, setBackupEnabled } from '../../lib/googleBackup.js';
+import { FREQUENCIES, backUpNow, backupAvailable, backupState, prepareBackup, setBackupFrequency } from '../../lib/googleBackup.js';
+import Modal from '../common/Modal.jsx';
+import { pickAndImportChats } from '../common/importChats.js';
 import { useChat } from '../../store/chat.js';
 import { restoreChats } from './RestoreOffer.jsx';
 import { useAuth } from '../../store/auth.js';
@@ -180,18 +182,52 @@ function StorageRow() {
  * chose typed in. Opens ChatApp directly on Android, or the web app.
  */
 /** Back up chats to the user's Google Drive (off by default). */
+/** "How often?" when backup is turned on, or tapped to change (like WhatsApp). */
+function FrequencyDialog({ current, onPick, onClose }) {
+  const [choice, setChoice] = useState(current === 'off' ? 'daily' : current);
+  return (
+    <Modal
+      title="Back up to Google Drive"
+      onClose={onClose}
+      className="backup-frequency"
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={() => onPick(choice)}>
+            {current === 'off' && choice !== 'off' ? 'Back up' : 'OK'}
+          </button>
+        </>
+      }
+    >
+      <p className="hint">How often should ChatApp back up your chats to your Google account?</p>
+      {FREQUENCIES.map((f) => (
+        <label key={f.id} className="radio-row">
+          <input type="radio" name="backup-frequency" checked={choice === f.id} onChange={() => setChoice(f.id)} /> {f.label}
+        </label>
+      ))}
+    </Modal>
+  );
+}
+
 function GoogleBackup({ user }) {
   const [state, setState] = useState(() => backupState(user.id));
   const [progress, setProgress] = useState(null); // 'Backing up 3 of 12…'
+  const [asking, setAsking] = useState(false);
   const available = backupAvailable();
   const chats = () => Object.values(useChat.getState().conversations);
   const onProgress = (done, total) => setProgress(`Backing up ${Math.min(done + 1, total)} of ${total} chats…`);
+  const label = FREQUENCIES.find((f) => f.id === state.frequency)?.label || 'Never';
+  useEffect(prepareBackup, []);
 
-  async function toggle(enabled) {
-    setProgress(enabled ? 'Connecting to Google…' : null);
+  async function pick(frequency) {
+    setAsking(false);
+    const turningOn = !state.enabled && frequency !== 'off';
+    if (turningOn) setProgress('Connecting to Google…');
     try {
-      await setBackupEnabled({ enabled, chats: chats(), me: user.id, onProgress });
-      if (enabled) toast('Chats backed up to your Google Drive');
+      await setBackupFrequency({ frequency, chats: chats(), me: user.id, onProgress });
+      if (turningOn) toast('Chats backed up to your Google Drive');
     } catch (e) {
       if (e.code !== 'CANCELLED' && e.message !== 'Cancelled') toast(e.message, 'error');
     } finally {
@@ -219,13 +255,23 @@ function GoogleBackup({ user }) {
         label="Back up chats to Google Drive"
         hint={
           available
-            ? 'Every day, a copy of your chats (made on this device) is saved in your Google account’s Drive, in a private app folder. Photos and files aren’t included.'
+            ? 'A copy of your chats (made on this device) is saved in your Google account’s Drive, in a private app folder. Photos and files aren’t included.'
             : 'Not available here yet.'
         }
         checked={state.enabled}
         disabled={!available || !!progress}
-        onChange={toggle}
+        onChange={(on) => (on ? setAsking(true) : pick('off'))}
       />
+      {available && state.enabled && (
+        <button className="settings-link" onClick={() => setAsking(true)} disabled={!!progress}>
+          <span>
+            Back up frequency
+            <small>{label}</small>
+          </span>
+          <ChevronRight size={18} />
+        </button>
+      )}
+      {asking && <FrequencyDialog current={state.frequency} onPick={pick} onClose={() => setAsking(false)} />}
       {progress && <p className="hint">{progress}</p>}
       {available && !progress && (
         <button
@@ -250,6 +296,9 @@ function GoogleBackup({ user }) {
           </button>
         </div>
       )}
+      <button className="btn btn-ghost" onClick={pickAndImportChats} disabled={!!progress}>
+        Import chats from an export file
+      </button>
     </div>
   );
 }

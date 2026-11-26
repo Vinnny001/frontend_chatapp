@@ -81,6 +81,17 @@ export async function queueInBackground(msg, token, getFile) {
   }
 }
 
+/**
+ * Hands any request (POST `path` with JSON `body`) to the background sender: it goes once the
+ * phone is online, even if the app is closed. Used for messages scheduled while offline.
+ */
+export async function queueRequestInBackground(id, path, body, token) {
+  if (!supported() || !token) return;
+  await Outbox.enqueue({ id, url: `${API_URL}${path}`, token, body: JSON.stringify(body) }).catch((err) =>
+    console.warn('Could not queue request in background', err)
+  );
+}
+
 /** Messages the background sender delivered while the app was closed (server replies). */
 export async function takeDeliveredInBackground() {
   if (!supported()) return [];
@@ -102,7 +113,7 @@ export async function takeDeliveredInBackground() {
 
 /** The app delivered it itself: drop the background job (and its copied file). */
 export function cancelBackground(clientId) {
-  if (!supported()) return;
+  if (!supported()) return Promise.resolve();
   copied.delete(clientId);
-  Outbox.cancel({ id: clientId }).catch(() => {});
+  return Outbox.cancel({ id: clientId }).catch(() => {});
 }

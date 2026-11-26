@@ -22,7 +22,7 @@ import { formatLastSeen } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
 import { useCall } from '../../store/call.js';
 import { chatAvatarUrl, conversationTitle, groupsInCommon, isSelfChat, peerOf, useChat, isOnlineSelector, presenceSelector } from '../../store/chat.js';
-import { toast, useUI } from '../../store/ui.js';
+import { chatKeptOffline, toast, useUI } from '../../store/ui.js';
 import { canSaveToPhone, contactSource, handleOf, knownPhone, removeContact, saveContact, saveToPhone, usePeople } from '../../store/people.js';
 import { canReadContacts } from '../../lib/contacts.js';
 
@@ -117,19 +117,24 @@ function GroupsInCommon({ peer, me }) {
           </span>
         </button>
       ))}
-      {groups.length > 5 && !all && (
-        <button className="link-btn" onClick={() => setAll(true)}>
-          See all {groups.length}
+      {groups.length > 5 && (
+        <button className="link-btn view-more" onClick={() => setAll(!all)}>
+          {all ? 'View less' : `View more (${groups.length - 5})`}
         </button>
       )}
     </section>
   );
 }
 
-/** Downloads this chat's full history and all its media so everything opens offline. */
+/**
+ * "Save chat for offline" (on by default): this chat's messages are kept on the device so it
+ * opens without a connection. Turning it on (or "Download all") also fetches the whole history
+ * and every photo, video, voice note and document in it.
+ */
 function SaveOffline({ convId }) {
   const [progress, setProgress] = useState(null);
   const busy = progress && !progress.done;
+  const on = useUI((s) => chatKeptOffline(convId, s));
 
   async function save() {
     setProgress({ messages: 0, files: 0, saved: 0, done: false });
@@ -141,7 +146,9 @@ function SaveOffline({ convId }) {
     }
   }
 
-  let status = 'Download every message, photo, video, voice note and document in this chat to this device.';
+  let status = on
+    ? 'Messages in this chat are kept on this device and open without a connection.'
+    : 'Off: this chat needs a connection to load messages you haven’t opened.';
   if (progress && !progress.done) {
     status =
       progress.files && progress.saved
@@ -153,13 +160,30 @@ function SaveOffline({ convId }) {
 
   return (
     <section className="info-card">
-      <button className="save-offline" onClick={save} disabled={busy}>
+      <label className="save-offline">
         <CloudDownload size={20} className={busy ? 'pulse' : ''} />
         <span>
           <strong>{busy ? 'Saving chat for offline…' : 'Save chat for offline'}</strong>
           <small>{status}</small>
         </span>
-      </button>
+        <input
+          type="checkbox"
+          className="switch"
+          checked={on}
+          disabled={busy}
+          aria-label="Save chat for offline"
+          onChange={(e) => {
+            useUI.getState().setChatOffline(convId, e.target.checked);
+            if (e.target.checked) save();
+            else setProgress(null);
+          }}
+        />
+      </label>
+      {on && !busy && (
+        <button className="link-btn save-offline-all" onClick={save}>
+          Download all photos, videos and files now
+        </button>
+      )}
     </section>
   );
 }
