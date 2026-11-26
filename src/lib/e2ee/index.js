@@ -469,6 +469,12 @@ export async function adoptSent(message) {
   if (rec.pendingFor?.length) resendSoon();
 }
 
+/** What this device remembers it sent under `key` (to put it back if a change is refused). */
+export const sentRecord = (key) => plain.get(key) || null;
+export function restoreSent(key, rec) {
+  if (rec) remember(key, rec);
+}
+
 export function rememberSent(key, payload, ciphertext, where = {}, missing = []) {
   const pendingFor = missing || []; // (unknown when encrypted offline)
   remember(key, { p: { v: 1, ...payload }, fp: fpOf(ciphertext), state: 'ok', ...where, ...(pendingFor.length && { pendingFor }) });

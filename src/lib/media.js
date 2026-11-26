@@ -14,6 +14,67 @@ const downloadable = (url) => !!url && !inMemory(url) && !url.startsWith('pendin
 
 const inflight = new Map(); // url -> Promise<Blob | null>
 
+// How far each download has got: url -> { loaded, total } (total 0 when the server doesn't say).
+const progress = new Map();
+const progressListeners = new Set();
+let notifyQueued = false;
+function setProgress(url, value) {
+  if (value) progress.set(url, value);
+  else progress.delete(url);
+  if (notifyQueued) return;
+  notifyQueued = true; // at most once a frame, however fast the chunks come
+  (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 16))(() => {
+    notifyQueued = false;
+    progressListeners.forEach((fn) => fn());
+  });
+}
+
+/** Reads a response, reporting how much has arrived. */
+async function readWithProgress(url, res) {
+  const total = Number(res.headers.get('Content-Length')) || 0;
+  if (!res.body?.getReader) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  setProgress(url, { loaded, total });
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    setProgress(url, { loaded, total });
+  }
+  const out = new Uint8Array(loaded);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out.buffer;
+}
+
+/**
+ * React hook: how far the download of `url` has got, as a fraction 0..1 (null when it isn't
+ * downloading). `size` is used when the server doesn't give the length.
+ */
+export function useDownloadProgress(url, size) {
+  const read = () => {
+    const p = url && progress.get(url);
+    if (!p) return null;
+    const total = p.total || size || 0;
+    return total ? Math.min(0.99, p.loaded / total) : 0;
+  };
+  const [value, setValue] = useState(read);
+  useEffect(() => {
+    const update = () => setValue(read());
+    update();
+    progressListeners.add(update);
+    return () => progressListeners.delete(update);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, size]);
+  return value;
+}
+
 /** Returns the stored copy, downloading and storing it first if needed (null if unavailable). */
 export async function ensureMedia(url) {
   if (!url || inMemory(url)) return null;
@@ -24,15 +85,17 @@ export async function ensureMedia(url) {
     try {
       const res = await fetch(mediaUrl(url), { mode: 'cors' });
       if (!res.ok) return null;
+      const data = await readWithProgress(url, res);
       // End-to-end encrypted attachment: decrypt it here (the stored copy is the decrypted one).
       const key = mediaKeyFor(url);
-      const blob = key ? await decryptToBlob(await res.arrayBuffer(), key) : await res.blob();
+      const blob = key ? await decryptToBlob(data, key) : new Blob([data], { type: res.headers.get('Content-Type') || '' });
       await putStoredMedia(url, blob);
       return blob;
     } catch {
       return null; // offline or blocked; try again next time
     } finally {
       inflight.delete(url);
+      setProgress(url, null);
     }
   })();
   inflight.set(url, job);

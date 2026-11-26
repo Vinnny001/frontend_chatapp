@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Clock, Pencil, Trash2 } from 'lucide-react';
 import Modal from '../common/Modal.jsx';
 import { plainMentions } from '../../lib/mentions.js';
@@ -37,6 +37,41 @@ export function formatWhen(iso) {
   if (d.toDateString() === today.toDateString()) return `Today ${time}`;
   if (d.toDateString() === tomorrow.toDateString()) return `Tomorrow ${time}`;
   return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
+}
+
+/** A message box that grows with its text (up to about half the screen, then scrolls). */
+function GrowingText({ value, onChange, ...props }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`; // (+ the border)
+  }, [value]);
+  return <textarea ref={ref} className="schedule-text" rows={3} maxLength={65536} value={value} onChange={(e) => onChange(e.target.value)} {...props} />;
+}
+
+/** The current time, updated every second while shown. */
+function useNow() {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+/** "2d 4h", "3h 05m", "4m 09s", "12s" until `at`. */
+export function countdown(at, now = Date.now()) {
+  const s = Math.max(0, Math.round((Date.parse(at) - now) / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${pad(m)}m`;
+  if (m) return `${m}m ${pad(sec)}s`;
+  return `${sec}s`;
 }
 
 /**
@@ -123,10 +158,11 @@ export function ScheduleDialog({ conv, text: initialText = '', replyTo, toTokens
         </>
       }
     >
-      <textarea autoFocus rows={3} maxLength={65536} value={text} onChange={(e) => setText(e.target.value)} placeholder="Message" aria-label="Message to schedule" />
+      <GrowingText autoFocus value={text} onChange={setText} placeholder="Message" aria-label="Message to schedule" />
       <WhenPicker value={when} onChange={setWhen} />
       <p className="hint">
-        It’s sent at that time even if your phone is off or offline then. Only you see it until then.
+        It’s sent at that time even if your phone is off or offline then. Only you see it until then, and you can edit it
+        until it goes out.
       </p>
     </Modal>
   );
@@ -152,11 +188,46 @@ export function ScheduledBar({ conv, me }) {
   );
 }
 
-function ScheduledRow({ item, conv, me }) {
+function ScheduledRow({ item, conv, me, now }) {
   const [editing, setEditing] = useState(false);
-  const [when, setWhen] = useState(() => localInput(new Date(Math.max(Date.parse(item.sendAt), Date.now() + 3600_000))));
+  const [when, setWhen] = useState('');
+  const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const chat = useChat.getState();
+  // Its text is only known on the device it was scheduled on (it's encrypted there).
+  const canEditText = item.text != null;
+  const due = Date.parse(item.sendAt) <= now;
+  // (Too close to its time: it may be going out right now.)
+  const locked = item.state === 'pending' && Date.parse(item.sendAt) - now < 5000;
+
+  const startEditing = () => {
+    const at = Date.parse(item.sendAt);
+    setWhen(localInput(new Date(item.state === 'failed' || at < Date.now() + 60_000 ? Math.max(at, Date.now() + 3600_000) : at)));
+    setText(item.text ?? '');
+    setEditing(true);
+  };
+
+  async function save() {
+    const at = new Date(when);
+    if (Number.isNaN(+at) || +at < Date.now() + 30_000) return toast('Choose a time in the future');
+    if (+at > Date.now() + MAX_DAYS * 864e5) return toast(`Messages can be scheduled up to ${MAX_DAYS} days ahead`);
+    const body = canEditText ? text.trim() : null;
+    if (canEditText && !body) return toast('The message can’t be empty. Delete it instead.');
+    const textChanged = canEditText && body !== item.text;
+    const timeChanged = localInput(new Date(item.sendAt)) !== when || item.state === 'failed';
+    if (!textChanged && !timeChanged) return setEditing(false);
+    setBusy(true);
+    try {
+      await chat.editScheduled(conv.id, item.id, { ...(textChanged && { text: body }), ...(timeChanged && { sendAt: at }) });
+      toast(textChanged ? 'Scheduled message changed' : 'Time changed');
+      setEditing(false);
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+    return undefined;
+  }
 
   const act = async (fn, done) => {
     setBusy(true);
@@ -172,15 +243,25 @@ function ScheduledRow({ item, conv, me }) {
 
   return (
     <li className={`scheduled-row ${item.state}`}>
-      <div className="scheduled-text">
-        {item.text != null ? plainMentions(item.text, conv, me) : <em>Scheduled on another of your devices</em>}
-      </div>
+      {editing && canEditText ? (
+        <GrowingText autoFocus value={text} onChange={setText} placeholder="Message" aria-label="Scheduled message" disabled={busy} />
+      ) : (
+        <div className="scheduled-text">
+          {item.text != null ? plainMentions(item.text, conv, me) : <em>Scheduled on another of your devices</em>}
+        </div>
+      )}
       <div className="scheduled-meta">
         <Clock size={14} /> {formatWhen(item.sendAt)}
+        {item.editedAt && <span className="scheduled-edited">· edited</span>}
         {item.state === 'failed' && <span className="scheduled-error">Not sent: {item.error || 'failed'}</span>}
         {item.state === 'waiting' && (
           <span className="scheduled-waiting">
-            Waiting for a connection{Date.parse(item.sendAt) < Date.now() ? ' · sends as soon as you’re online' : ''}
+            Waiting for a connection{due ? ' · sends as soon as you’re online' : ''}
+          </span>
+        )}
+        {item.state !== 'failed' && (
+          <span className={`scheduled-countdown ${due ? 'due' : ''}`} aria-label="Time left">
+            {due ? (item.state === 'waiting' ? 'Due' : 'Sending…') : `in ${countdown(item.sendAt, now)}`}
           </span>
         )}
       </div>
@@ -191,19 +272,15 @@ function ScheduledRow({ item, conv, me }) {
             <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={busy}>
               Cancel
             </button>
-            <button
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => act(() => chat.rescheduleMessage(conv.id, item.id, new Date(when)).then(() => setEditing(false)), 'Time changed')}
-            >
-              Save
+            <button className="btn btn-primary" disabled={busy || (canEditText && !text.trim())} onClick={save}>
+              {busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
       ) : (
         <div className="scheduled-actions">
-          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)} disabled={busy}>
-            <Pencil size={14} /> {item.state === 'failed' ? 'Try again at…' : 'Change time'}
+          <button className="btn btn-ghost btn-sm" onClick={startEditing} disabled={busy || locked}>
+            <Pencil size={14} /> {item.state === 'failed' ? 'Try again at…' : canEditText ? 'Edit' : 'Change time'}
           </button>
           <button
             className="btn btn-ghost btn-sm danger"
@@ -220,12 +297,13 @@ function ScheduledRow({ item, conv, me }) {
 
 function ScheduledList({ conv, me, onClose }) {
   const list = useChat((s) => s.scheduled[conv.id]) || [];
+  const now = useNow();
   return (
     <Modal title="Scheduled messages" onClose={onClose} className="scheduled-list">
       {list.length ? (
         <ul>
           {list.map((item) => (
-            <ScheduledRow key={item.id} item={item} conv={conv} me={me} />
+            <ScheduledRow key={item.id} item={item} conv={conv} me={me} now={now} />
           ))}
         </ul>
       ) : (

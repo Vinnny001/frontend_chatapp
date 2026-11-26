@@ -100,6 +100,10 @@ final class Notifier {
             case "join_request":
                 if (!Session.foreground) showJoinRequest(context, data);
                 break;
+            case "scheduled_sent":
+                // (With the app open, the app says so itself.)
+                if (!Session.foreground) showScheduledSent(context, data);
+                break;
             case "login_request_done":
                 NotificationManagerCompat.from(context).cancel(TAG_LOGIN + data.get("requestId"), ID);
                 break;
@@ -602,6 +606,30 @@ final class Notifier {
             .setContentIntent(activity(context, "open", conversationId, null, null));
         //noinspection MissingPermission (checked by canNotify)
         NotificationManagerCompat.from(context).notify("join:" + conversationId, ID, builder.build());
+    }
+
+    /** One of my scheduled messages went out (sent by the server at its time). */
+    private static void showScheduledSent(Context context, Map<String, String> d) {
+        String conversationId = d.get("conversationId");
+        if (conversationId == null || !canNotify(context)) return;
+        boolean group = "1".equals(d.get("isGroup"));
+        String peerId = d.get("peerId");
+        String title = d.get("chatTitle") == null || d.get("chatTitle").isEmpty() ? "your chat" : d.get("chatTitle");
+        String to = group || peerId == null || peerId.isEmpty() ? title : Session.nameFor(context, peerId, title);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CH_MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_chat)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle("Scheduled message sent")
+            .setContentText("Your scheduled message to " + to + " was sent")
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setWhen(parseLong(d.get("sentAt"), System.currentTimeMillis()))
+            .setShowWhen(true)
+            .setAutoCancel(true)
+            .setContentIntent(activity(context, "open", conversationId, null, null));
+        String messageId = d.get("messageId") == null ? conversationId : d.get("messageId");
+        //noinspection MissingPermission (checked by canNotify)
+        NotificationManagerCompat.from(context).notify("scheduled:" + messageId, ID, builder.build());
     }
 
     // ------------------------------------------------------------------ calls

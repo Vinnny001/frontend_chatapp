@@ -40,7 +40,7 @@ import Modal from '../common/Modal.jsx';
 import { useAuth } from '../../store/auth.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
-import { ensureMedia, mediaKind, useIsStored, useMediaSrc } from '../../lib/media.js';
+import { ensureMedia, mediaKind, useDownloadProgress, useIsStored, useMediaSrc } from '../../lib/media.js';
 import { shareFile } from '../../lib/share.js';
 import { connectionKind } from '../../lib/network.js';
 import { openDocument } from '../../lib/deviceFiles.js';
@@ -216,9 +216,31 @@ function MissingMedia({ type }) {
   );
 }
 
-/** Media not covered by the auto-download rules: tap to download (shows the size). */
-function DownloadPrompt({ type, size, downloading, onDownload }) {
+/** A ring that fills as a download progresses (spins while the size isn't known yet). */
+function ProgressRing({ value, size = 36 }) {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const known = value > 0;
+  return (
+    <svg className={`progress-ring ${known ? '' : 'spin'}`} width={size} height={size} viewBox="0 0 36 36" aria-hidden="true">
+      <circle cx="18" cy="18" r={r} className="track" />
+      <circle cx="18" cy="18" r={r} className="bar" strokeDasharray={c} strokeDashoffset={known ? c * (1 - value) : c * 0.75} />
+    </svg>
+  );
+}
+
+/** "Downloading 42% · 1.2 MB of 3 MB" */
+function downloadLabel(fraction, size) {
+  if (fraction == null) return 'Downloading…';
+  const pct = `${Math.round(fraction * 100)}%`;
+  return size ? `${pct} · ${formatBytes(Math.round(fraction * size))} of ${formatBytes(size)}` : `Downloading ${pct}`;
+}
+
+/** Media not covered by the auto-download rules: tap to download (shows the size, then progress). */
+function DownloadPrompt({ type, size, url, downloading, onDownload }) {
   const label = { image: 'Photo', video: 'Video', voice: 'Voice message', audio: 'Audio' }[type] || 'File';
+  const fraction = useDownloadProgress(url, size);
+  const busy = downloading || fraction != null;
   return (
     <button
       type="button"
@@ -227,14 +249,26 @@ function DownloadPrompt({ type, size, downloading, onDownload }) {
         e.stopPropagation();
         onDownload();
       }}
-      disabled={downloading}
+      disabled={busy}
     >
-      <CloudDownload size={24} className={downloading ? 'pulse' : ''} />
-      <span>
-        {downloading ? 'Downloading…' : `Download ${label.toLowerCase()}`}
-        {size ? ` · ${formatBytes(size)}` : ''}
-      </span>
+      {busy ? <ProgressRing value={fraction} /> : <CloudDownload size={24} />}
+      <span>{busy ? downloadLabel(fraction, size) : `Download ${label.toLowerCase()}${size ? ` · ${formatBytes(size)}` : ''}`}</span>
     </button>
+  );
+}
+
+/** A photo/video/voice note being downloaded automatically: its progress. */
+function MediaLoading({ type, url, size }) {
+  const fraction = useDownloadProgress(url, size);
+  return (
+    <div className={`media-loading ${type}`}>
+      {fraction != null && (
+        <span className="media-loading-progress">
+          <ProgressRing value={fraction} />
+          {fraction > 0 && <span>{Math.round(fraction * 100)}%</span>}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -259,12 +293,13 @@ function VisualMedia({ msg, uploading }) {
       <DownloadPrompt
         type={msg.type}
         size={media.size}
+        url={media.url}
         downloading={downloading}
         onDownload={() => download().then((ok) => ok || toast('Download failed. Check your connection.', 'error'))}
       />
     );
   }
-  if (!src) return <div className={`media-loading ${msg.type}`} />;
+  if (!src) return <MediaLoading type={msg.type} url={media.url} size={media.size} />;
 
   if (msg.type === 'image') {
     return (
@@ -296,6 +331,8 @@ function VisualMedia({ msg, uploading }) {
 function DocumentCard({ media, uploadingProgress }) {
   const [opening, setOpening] = useState(false);
   const stored = useIsStored(media.url);
+  // (Downloading: opened here, or by auto-download / "Save chat for offline".)
+  const fraction = useDownloadProgress(stored ? null : media.url, media.size);
   async function open(e) {
     e.stopPropagation();
     if (opening) return;
@@ -318,14 +355,22 @@ function DocumentCard({ media, uploadingProgress }) {
         <span className="file-meta">
           {uploadingProgress != null
             ? `Uploading ${Math.round(uploadingProgress * 100)}%`
-            : opening
-              ? stored
-                ? 'Opening…'
-                : 'Downloading…'
-              : `${formatBytes(media.size)} · ${apk ? 'Android app' : ext}`}
+            : fraction != null
+              ? downloadLabel(fraction, media.size)
+              : opening
+                ? stored
+                  ? 'Opening…'
+                  : 'Downloading…'
+                : `${formatBytes(media.size)} · ${apk ? 'Android app' : ext}`}
         </span>
+        {fraction != null && (
+          <span className="file-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fraction * 100)}>
+            <span style={{ width: `${Math.max(3, fraction * 100)}%` }} />
+          </span>
+        )}
       </span>
-      {!stored && uploadingProgress == null && <Download size={18} className={opening ? 'pulse' : ''} aria-label="Not downloaded" />}
+      {!stored && uploadingProgress == null &&
+        (fraction != null || opening ? <ProgressRing value={fraction} size={24} /> : <Download size={18} aria-label="Not downloaded" />)}
     </button>
   );
 }
@@ -691,7 +736,11 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
           <span className="meta">
             {pinned && <Pin size={11} aria-label="Pinned" />}
             {msg.starred && <Star size={11} fill="currentColor" />}
-            {msg.editedAt && !deleted && <span className="edited">edited</span>}
+            {(msg.editedAt || (mine && msg.editedBeforeSendAt)) && !deleted && (
+              <span className="edited" title={!msg.editedAt ? 'You edited this scheduled message before it was sent. Only you see this.' : undefined}>
+                edited
+              </span>
+            )}
             <span>{formatTime(msg.createdAt)}</span>
             {mine && !deleted && <Ticks status={status} />}
           </span>

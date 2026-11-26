@@ -78,7 +78,7 @@ const sortScheduled = (list) => [...list].sort((a, b) => Date.parse(a.sendAt) - 
 const scheduledQueueKey = () => `chat.scheduledQueue.${meId()}`;
 const scheduledQueue = () => storage.get(scheduledQueueKey()) || [];
 const queuedItem = (q) =>
-  withText({ id: `local:${q.clientId}`, conversationId: q.convId, clientId: q.clientId, sendAt: q.body.sendAt, state: 'waiting', local: true });
+  withText({ id: `local:${q.clientId}`, conversationId: q.convId, clientId: q.clientId, sendAt: q.body.sendAt, state: 'waiting', local: true, editedAt: q.body.edited ? q.body.sendAt : null });
 
 /** The not-yet-uploaded file of a queued message: in memory, or saved on the device. */
 const fileFor = (clientId) => async () => pendingFiles.get(clientId) || getStoredMedia(pendingKey(clientId));
@@ -216,6 +216,20 @@ function contentForEncryption(m) {
     ...(m.statusRef && { statusRef: m.statusRef }),
     ...(m.quoteRef && { quoteRef: m.quoteRef }),
   };
+}
+
+/**
+ * A scheduled message's text, encrypted now on this device (offline too, with this device's
+ * keys) → what the server stores and sends later. Its text is kept here to show it.
+ */
+async function encryptScheduled(convId, clientId, text, replyToId, at) {
+  if (!e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be scheduled.');
+  const payload = contentForEncryption({ type: 'text', text });
+  const out = await e2ee.encryptMessage(convId, payload, { offline: !isOnline() });
+  if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
+  e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: convId, sender: meId(), at }, out.missing);
+  storage.set(scheduledTextKey(), { ...scheduledTexts(), [clientId]: text });
+  return sendPayload({ clientId, e2eeOut: { ...out, payload }, replyTo: replyToId ? { id: replyToId } : null });
 }
 
 export const useChat = create((set, get) => {
@@ -727,16 +741,9 @@ export const useChat = create((set, get) => {
      * copy at `sendAt` (even if this phone is off then). Its text is kept here to show it.
      */
     async scheduleMessage(convId, { text, replyTo }, sendAt) {
-      if (!e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be scheduled.');
       const clientId = uid();
       const at = new Date(sendAt).toISOString();
-      const payload = contentForEncryption({ type: 'text', text });
-      // (Offline too: it's encrypted now with this device's keys.)
-      const out = await e2ee.encryptMessage(convId, payload, { offline: !isOnline() });
-      if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
-      e2ee.rememberSent(`c:${clientId}`, payload, out.ciphertext, { conv: convId, sender: meId(), at }, out.missing);
-      const message = sendPayload({ clientId, e2eeOut: { ...out, payload }, replyTo: replyTo ? { id: replyTo.id } : null });
-      storage.set(scheduledTextKey(), { ...scheduledTexts(), [clientId]: text });
+      const message = await encryptScheduled(convId, clientId, text, replyTo?.id, at);
       const body = { sendAt: at, message };
       try {
         const { scheduled } = await api(`/api/conversations/${convId}/scheduled`, { method: 'POST', body });
@@ -811,6 +818,47 @@ export const useChat = create((set, get) => {
       set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? withText(scheduled) : x))) } }));
     },
 
+    /**
+     * Changes a scheduled message's text (and/or time) before it goes out. The new text is
+     * encrypted again here; the server refuses it if it's already being sent, or was changed
+     * on another device meanwhile.
+     */
+    async editScheduled(convId, id, { text, sendAt }) {
+      const item = (get().scheduled[convId] || []).find((x) => x.id === id);
+      if (!item) throw new Error('Scheduled message not found (it may have been sent already)');
+      const at = new Date(sendAt || item.sendAt).toISOString();
+      const local = scheduledQueue().find((q) => `local:${q.clientId}` === id);
+      const replyTo = local ? local.body.message.replyTo : item.replyTo;
+      const textChanged = text != null && text !== item.text;
+      const oldText = scheduledTexts()[item.clientId];
+      const oldSent = e2ee.sentRecord(`c:${item.clientId}`);
+      const message = textChanged ? await encryptScheduled(convId, item.clientId, text, replyTo, at) : null;
+      if (local) {
+        // Not on the server yet: change it here (and in the phone's background sender).
+        local.body = { sendAt: at, message: message || local.body.message, ...(textChanged && { edited: true }) };
+        storage.set(scheduledQueueKey(), scheduledQueue().map((q) => (q.clientId === local.clientId ? local : q)));
+        await cancelBackground(`sched-${local.clientId}`);
+        queueRequestInBackground(`sched-${local.clientId}`, `/api/conversations/${convId}/scheduled`, { ...local.body, offline: true }, authToken());
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? queuedItem(local) : x))) } }));
+        return;
+      }
+      try {
+        const { scheduled } = await api(`/api/conversations/${convId}/scheduled/${id}`, {
+          method: 'PATCH',
+          body: { ...(sendAt && { sendAt: at }), ...(message && { message }), ...(item.version && { version: item.version }) },
+        });
+        set((s) => ({ scheduled: { ...s.scheduled, [convId]: sortScheduled((s.scheduled[convId] || []).map((x) => (x.id === id ? withText(scheduled) : x))) } }));
+      } catch (e) {
+        // Not changed: keep showing (and remembering) what will really be sent.
+        if (textChanged) {
+          storage.set(scheduledTextKey(), { ...scheduledTexts(), [item.clientId]: oldText });
+          e2ee.restoreSent(`c:${item.clientId}`, oldSent);
+        }
+        if (e.status === 409 || e.status === 404) get().loadScheduled(convId);
+        throw e;
+      }
+    },
+
     async cancelScheduled(convId, id) {
       const local = scheduledQueue().find((q) => `local:${q.clientId}` === id);
       if (local) {
@@ -827,8 +875,24 @@ export const useChat = create((set, get) => {
     },
 
     /** The server sent, changed or cancelled one of my scheduled messages. */
-    onScheduledUpdate({ conversationId }) {
-      if (conversationId) get().loadScheduled(conversationId);
+    onScheduledUpdate({ conversationId, sent, clientId }) {
+      if (!conversationId) return;
+      if (sent) {
+        // It went out: tell me ("Scheduled message sent"), with its text if this device has it.
+        const conv = get().conversations[conversationId];
+        const text = (clientId && scheduledTexts()[clientId]) || '';
+        const to = !conv ? 'your chat' : conv.type === 'group' ? conv.name : conv.participants.find((p) => p.id !== meId())?.name || 'your chat';
+        const title = `Scheduled message sent to ${to}`;
+        const preview = text ? plainMentions(text, conv, meId()).slice(0, 200) : 'Your scheduled message was sent';
+        if (document.visibilityState !== 'visible') {
+          showNotification(title, preview, () => get().openConversation(conversationId));
+        } else if (!isViewing(conversationId)) {
+          useUI.getState().showBanner({ title, text: preview, avatarUrl: conv ? chatAvatarUrl(conv) : null, conversationId });
+        } else {
+          toast('Scheduled message sent');
+        }
+      }
+      get().loadScheduled(conversationId);
     },
 
     /** Optimistically shows a media message while the file uploads, then sends it. */

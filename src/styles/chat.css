@@ -1221,6 +1221,74 @@
   height: 54px;
 }
 
+.media-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.media-loading-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bubble-meta);
+}
+.media-loading.voice .media-loading-progress,
+.media-loading.audio .media-loading-progress {
+  flex-direction: row;
+}
+
+/* download progress */
+.progress-ring {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.progress-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.progress-ring .track {
+  stroke: currentColor;
+  opacity: 0.2;
+}
+.progress-ring .bar {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s linear;
+}
+.progress-ring.spin {
+  animation: progress-spin 1s linear infinite;
+}
+@keyframes progress-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-ring.spin {
+    animation-duration: 3s;
+  }
+}
+.file-progress {
+  display: block;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+}
+.file-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
 .media-missing {
   display: flex;
   flex-direction: column;
@@ -1804,9 +1872,51 @@ button.mention.me {
   flex-direction: column;
   gap: 12px;
 }
-.schedule-dialog textarea {
+/* Grows with what's typed (see GrowingText), up to about half the screen, then scrolls. */
+.schedule-text {
+  display: block;
   width: 100%;
-  resize: vertical;
+  box-sizing: border-box;
+  flex-shrink: 0; /* never squeezed by the rest of the dialog */
+  min-height: 72px;
+  max-height: 45vh;
+  max-height: 45dvh;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* (smaller text makes phones zoom in) */
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.schedule-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.scheduled-edited {
+  font-style: italic;
+  color: var(--text-3);
+}
+.scheduled-countdown {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.scheduled-countdown.due {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.scheduled-edit {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
 }
 .when-picker {
   display: grid;
@@ -1883,4 +1993,7 @@ button.mention.me {
 }
 .scheduled-actions .danger {
   color: var(--danger, #d93025);
+}
+.scheduled-row .schedule-text {
+  background: var(--panel);
 }

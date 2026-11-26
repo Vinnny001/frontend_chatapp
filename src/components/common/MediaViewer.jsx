@@ -1,8 +1,15 @@
 import { useEffect } from 'react';
 import { Download, X } from 'lucide-react';
 import { mediaUrl } from '../../lib/config.js';
-import { useMediaSrc } from '../../lib/media.js';
+import { useDownloadProgress, useMediaSrc } from '../../lib/media.js';
 import { useUI } from '../../store/ui.js';
+
+/** Still downloading (and decrypting): how far it's got. */
+function ViewerProgress({ url }) {
+  const fraction = useDownloadProgress(url);
+  if (fraction == null) return null;
+  return <p className="viewer-missing">{fraction > 0 ? `Downloading ${Math.round(fraction * 100)}%` : 'Downloading…'}</p>;
+}
 
 export default function MediaViewer() {
   const viewer = useUI((s) => s.viewer);
@@ -35,7 +42,9 @@ export default function MediaViewer() {
       <div className="viewer-content" onClick={(e) => e.stopPropagation()}>
         {missing ? (
           <p className="viewer-missing">Not downloaded yet. Connect to the internet to view it.</p>
-        ) : !src ? null : viewer.type === 'video' ? (
+        ) : !src ? (
+          <ViewerProgress url={viewer.url} />
+        ) : viewer.type === 'video' ? (
           <video src={src} controls autoPlay playsInline />
         ) : (
           <img
