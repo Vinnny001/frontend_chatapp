@@ -6,7 +6,6 @@ import { useAuth } from './auth.js';
 import { useCall } from './call.js';
 import { toast } from './ui.js';
 import * as e2ee from '../lib/e2ee/index.js';
-import { useChat } from './chat.js';
 
 // Group voice/video calls (3+ people) through LiveKit: the API hands out a pass for the
 // group's call room; media goes through LiveKit's servers. One-to-one calls stay in call.js.
@@ -131,7 +130,11 @@ export const useGroupCall = create((set, get) => ({
       const { Room, RoomEvent, VideoPresets } = LK;
       // End-to-end encrypted group: media is encrypted with the call's key before it leaves the
       // device, so LiveKit's server only forwards encrypted frames.
-      const secure = !!useChat.getState().conversations[conversationId]?.e2ee && e2ee.enabled();
+      // Always encrypted (as every chat is); sets up the chat's encryption group if it has none yet.
+      await e2ee.whenStarted();
+      if (!e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so it can’t join calls.');
+      const secure = await e2ee.willEncrypt(conversationId);
+      if (!secure) throw new Error('Couldn’t set up encryption for this call. Try again in a moment.');
       let e2eeOptions;
       if (secure) {
         if (!LK.isE2EESupported()) throw new Error('This device can’t join end-to-end encrypted group calls');

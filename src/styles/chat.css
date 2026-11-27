@@ -1038,106 +1038,255 @@
 
 /* ---------- attachment preview ---------- */
 
+/* A dark media screen (as in camera and gallery apps) in light and dark mode alike. */
 .attach-preview {
+  --ap-bg: #0b1014;
+  --ap-surface: rgba(255, 255, 255, 0.08);
+  --ap-surface-2: rgba(255, 255, 255, 0.14);
+  --ap-text: #f1f3f4;
+  --ap-muted: rgba(241, 243, 244, 0.66);
   position: fixed;
   inset: 0;
   z-index: 80;
   display: flex;
   flex-direction: column;
-  background: var(--panel-2);
+  background: var(--ap-bg);
+  color: var(--ap-text);
   animation: fade 0.15s;
 }
+.attach-preview .icon-btn {
+  color: var(--ap-text);
+}
 
-.attach-preview header {
+.attach-top {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
-  font-weight: 500;
+  gap: 10px;
+  padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
+}
+.attach-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  text-align: center;
+}
+.attach-title strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.attach-title span {
+  font-size: 12px;
+  color: var(--ap-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attach-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 8px 12px;
+  touch-action: pan-y;
 }
-
 .attach-stage img,
 .attach-stage video {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 12px;
+  border-radius: 6px;
   object-fit: contain;
+  animation: fade 0.15s;
 }
-
 .attach-file {
   display: grid;
   justify-items: center;
   gap: 8px;
-  color: var(--text-2);
+  padding: 28px 32px;
+  border-radius: 16px;
+  background: var(--ap-surface);
+  text-align: center;
+  overflow-wrap: anywhere;
+  max-width: min(420px, 100%);
+}
+.attach-file span {
+  color: var(--ap-muted);
+  font-size: 13px;
+}
+.attach-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+.attach-nav.prev {
+  left: 12px;
+}
+.attach-nav.next {
+  right: 12px;
+}
+@media (hover: none) {
+  .attach-nav {
+    display: none; /* swipe instead */
+  }
 }
 
 .attach-bottom {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
-  max-width: 900px;
+  display: grid;
+  gap: 10px;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
+  max-width: 760px;
   width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
-
-.attach-caption {
-  flex: 1 1 260px;
-}
-.attach-caption textarea {
-  flex: 1;
-  min-height: 44px;
-  max-height: 120px;
-  resize: none;
-  padding: 11px 14px;
-  border-radius: 22px;
-  line-height: 1.4;
-  font-size: 15px;
-}
-.attach-caption textarea:focus {
-  border-color: transparent;
-}
-.attach-mentions {
-  flex: 1 0 100%;
-}
-.attach-mentions .mention-picker {
-  margin: 0;
-}
-
 .attach-thumbs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: none;
 }
-
+.attach-thumbs::-webkit-scrollbar {
+  display: none;
+}
 .attach-thumbs button {
+  position: relative;
+  flex: none;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 10px;
   overflow: hidden;
   border: 2px solid transparent;
-  background: var(--panel);
+  background: var(--ap-surface);
+  color: var(--ap-text);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.12s, border-color 0.12s;
 }
-
 .attach-thumbs button.active {
   border-color: var(--accent);
+  opacity: 1;
 }
-
-.attach-thumbs img {
+.attach-thumbs img,
+.attach-thumbs video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  pointer-events: none;
+}
+.thumb-play {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  color: #fff;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
+}
+.thumb-doc {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.thumb-doc small {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.thumb-captioned {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--ap-bg);
+}
+.attach-thumbs .attach-add {
+  border: 2px dashed var(--ap-surface-2);
+  background: transparent;
+  opacity: 1;
+}
+.attach-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.attach-caption {
+  flex: 1;
+  min-width: 0;
+}
+.attach-preview .attach-caption textarea {
+  flex: 1;
+  min-height: 46px;
+  max-height: 120px;
+  resize: none;
+  padding: 12px 16px;
+  border-radius: 23px;
+  line-height: 1.4;
+  font-size: 16px; /* (smaller text makes phones zoom in) */
+  caret-color: var(--ap-text);
+  border: 1px solid transparent;
+}
+/* The caption's text is drawn by this layer behind the (transparent) box: same size and spacing. */
+.attach-preview .attach-caption .composer-highlight {
+  padding: 12px 16px;
+  border-radius: 23px;
+  line-height: 1.4;
+  font-size: 16px;
+  background: #1f272c;
+  color: var(--ap-text);
+}
+.attach-preview .attach-caption textarea::placeholder {
+  color: var(--ap-muted);
+}
+.attach-preview .attach-caption textarea:focus {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.attach-preview .once-toggle {
+  color: var(--ap-text);
+  background: var(--ap-surface);
+  width: 46px;
+  height: 46px;
+}
+.attach-preview .once-toggle.on {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.attach-send-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.attach-to {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background: var(--ap-surface);
+  font-size: 13px;
+  color: var(--ap-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-send-row .send-btn {
+  margin-left: auto;
+}
+.attach-mentions .mention-picker {
+  margin: 0;
 }
 
 /* ---------- empty state ---------- */
@@ -1996,4 +2145,191 @@ button.mention.me {
 }
 .scheduled-row .schedule-text {
   background: var(--panel);
+}
+
+/* ---------------------------------------------------------------- shared contacts */
+.contact-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 17px;
+}
+.contact-avatar.big {
+  width: 44px;
+  height: 44px;
+}
+.contact-avatar.huge {
+  width: 72px;
+  height: 72px;
+  font-size: 30px;
+}
+.contact-card {
+  width: 260px;
+  max-width: 100%;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+:root[data-theme='dark'] .contact-card {
+  background: rgba(0, 0, 0, 0.2);
+}
+.contact-card.preview {
+  margin: 0 auto;
+}
+.contact-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.contact-card-main:disabled {
+  cursor: default;
+}
+.contact-card-text {
+  display: grid;
+  min-width: 0;
+}
+.contact-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-card-sub {
+  font-size: 12.5px;
+  color: var(--bubble-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-card-actions {
+  display: flex;
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+.contact-card-actions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 6px;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.contact-card-actions button + button {
+  border-left: 1px solid rgba(127, 127, 127, 0.2);
+}
+.contact-card-bad {
+  font-style: italic;
+  color: var(--bubble-meta);
+}
+.contact-share .modal-body,
+.contact-details .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contact-share-preview {
+  padding: 8px 0 4px;
+}
+.contact-share-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 4px;
+}
+.contact-share-choice legend {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.contact-share-choice .radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+.contact-share-choice .radio-row.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.contact-share-choice .radio-row span {
+  display: grid;
+}
+.contact-share-choice small,
+.contact-details-numbers small {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.contact-share .field,
+.contact-details .field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.contact-share .field input,
+.contact-details .field input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+.contact-details-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.contact-details-on {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+.contact-details-numbers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.contact-details-numbers li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.contact-details-numbers li > span {
+  flex: 1;
+  display: grid;
+  padding-left: 8px;
+  font-variant-numeric: tabular-nums;
 }

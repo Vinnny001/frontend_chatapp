@@ -40,6 +40,7 @@ import Modal from '../common/Modal.jsx';
 import { useAuth } from '../../store/auth.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
+import { ContactCard } from './ContactShare.jsx';
 import { ensureMedia, mediaKind, useDownloadProgress, useIsStored, useMediaSrc } from '../../lib/media.js';
 import { shareFile } from '../../lib/share.js';
 import { connectionKind } from '../../lib/network.js';
@@ -116,8 +117,9 @@ async function openProfile(userId) {
 }
 
 /** A photo, video, voice note or document from a chat, to another app (WhatsApp, Gmail...). */
-async function shareMedia(msg) {
+async function shareMedia(msg, conv, me) {
   const { media } = msg;
+  const caption = msg.text ? plainMentions(msg.text, conv, me) : '';
   // (A big file takes a moment to hand over: say so straight away.)
   if ((media.size || 0) > 2 * 1024 * 1024) toast('Preparing to share…');
   try {
@@ -127,7 +129,7 @@ async function shareMedia(msg) {
     const ext = { image: 'jpg', video: 'mp4', voice: 'webm', audio: 'mp3' }[msg.type] || 'bin';
     const name = media.name || `ChatApp ${msg.type} ${msg.createdAt.slice(0, 10)}.${ext}`;
     const typed = blob.type ? blob : new Blob([blob], { type: media.mime || 'application/octet-stream' });
-    await shareFile(typed, name, { title: 'Share', key: local ? undefined : media.url });
+    await shareFile(typed, name, { title: 'Share', key: local ? undefined : media.url, text: caption });
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -188,7 +190,7 @@ function ReplyQuote({ reply: quoted, conv, me, onClick }) {
   const author = reply.sender === me ? 'You' : conv.participants.find((p) => p.id === reply.sender)?.name || 'Someone';
   const label = reply.deletedForEveryone
     ? 'This message was deleted'
-    : plainMentions(reply.text || (reply.e2ee && !inner ? '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}` }[reply.type] || '';
+    : plainMentions(reply.text || (reply.e2ee && !inner ? '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}`, contact: `👤 ${inner?.contact?.name || inner?.contact?.phones?.[0]?.number || 'Contact'}` }[reply.type] || '';
   return (
     <button className="reply-quote" onClick={onClick}>
       <span className="reply-body">
@@ -590,7 +592,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             onClick: () => navigator.clipboard?.writeText(plainMentions(msg.text, conv, me)).then(() => toast('Copied'), () => toast('Could not copy')),
           },
           !special && { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
-          !special && hasMedia && { label: 'Share', icon: Share2, onClick: () => shareMedia(msg) },
+          !special && hasMedia && { label: 'Share', icon: Share2, onClick: () => shareMedia(msg, conv, me) },
           { label: msg.starred ? 'Unstar' : 'Star', icon: msg.starred ? StarOff : Star, onClick: () => chat.toggleStar(msg) },
           canSendIn(conv, me) && !conv.me?.blocked && {
             label: pinned ? 'Unpin' : 'Pin',
@@ -725,6 +727,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             <>
               {msg.viewOnce ? <ViewOnceBody msg={msg} conv={conv} me={me} /> : hasMedia && <Media msg={msg} />}
               {msg.poll && <PollBody msg={msg} conv={conv} me={me} />}
+              {msg.type === 'contact' && msg.contact && <ContactCard card={msg.contact} />}
               {msg.e2ee && !msg.text && msg.e2eeState !== 'ok' && <E2eeWaiting state={msg.e2eeState} />}
               {msg.text && (
                 <span className="text">

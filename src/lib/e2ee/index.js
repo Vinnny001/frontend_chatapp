@@ -289,6 +289,7 @@ function apply(m, p) {
     forwarded: !!(m.forwarded || p.forwarded),
     ...(p.statusRef && { statusRef: p.statusRef }),
     ...(p.quoteRef && { quoteRef: p.quoteRef }),
+    ...(p.contact && { contact: p.contact }), // a shared contact card
     e2eeState: 'ok',
   };
 }

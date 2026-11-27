@@ -166,6 +166,9 @@ public class DeviceFilesPlugin extends Plugin {
                 .setType(mime == null || mime.isEmpty() ? "application/octet-stream" : mime)
                 .putExtra(Intent.EXTRA_STREAM, uri)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            // The photo's caption goes along with it (apps that take both show it with the file).
+            String text = call.getString("text");
+            if (text != null && !text.isEmpty()) send.putExtra(Intent.EXTRA_TEXT, text);
             send.setClipData(android.content.ClipData.newRawUri(file.getName(), uri));
             Intent chooser = Intent.createChooser(send, call.getString("title", "Share"))
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

@@ -218,6 +218,7 @@ function contentForEncryption(m) {
     ...(m.forwarded && { forwarded: true }),
     ...(m.statusRef && { statusRef: m.statusRef }),
     ...(m.quoteRef && { quoteRef: m.quoteRef }),
+    ...(m.contact && { contact: m.contact }), // a shared contact card
   };
 }
 
@@ -707,7 +708,7 @@ export const useChat = create((set, get) => {
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
-    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef, quoteRef }) {
+    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef, quoteRef, contact }) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -723,6 +724,8 @@ export const useChat = create((set, get) => {
         ...(statusRef && { statusRef }),
         // A private reply to a group message: { conversationId, messageId, sender, senderName, chat, preview }
         ...(quoteRef && { quoteRef }),
+        // A shared contact: { name?, phones: [{ number, label? }] } (encrypted like the rest)
+        ...(contact && { contact }),
         ...(poll && {
           poll: { question: poll.question, options: poll.options.map((text, i) => ({ id: String(i), text })), multiple: !!poll.multiple, votes: [] },
         }),
@@ -1087,7 +1090,7 @@ export const useChat = create((set, get) => {
     /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
     onRevealed(m) {
       if (!m?.conversationId) return;
-      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, quoteRef: m.quoteRef, e2eeState: m.e2eeState };
+      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, quoteRef: m.quoteRef, contact: m.contact, e2eeState: m.e2eeState };
       patchItem(m.conversationId, m.id, shown);
       patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, ...shown } } : {}));
       if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, ...shown });
@@ -1226,15 +1229,13 @@ export const useChat = create((set, get) => {
 
     forward(msg, convIds) {
       for (const convId of convIds) {
-        // An encrypted attachment only opens with its key: it can only go to encrypted chats.
-        if (msg.media?.key && !get().conversations[convId]?.e2ee) {
-          toast('This can only be forwarded to end-to-end encrypted chats', 'error');
-          continue;
-        }
+        // One message, as it was: the photo/video/file with its caption (encrypted again for
+        // that chat when it's sent; every chat is end-to-end encrypted).
         get().sendMessage(convId, {
           type: msg.type,
           text: msg.text,
           media: msg.media ? { ...msg.media } : undefined,
+          ...(msg.contact && { contact: msg.contact }),
           forwarded: true,
         });
       }
@@ -1545,6 +1546,7 @@ export function previewText(msg) {
   }
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
   if (msg.type === 'poll') return `📊 ${msg.poll?.question || 'Poll'}`;
+  if (msg.type === 'contact') return `👤 ${msg.contact?.name || msg.contact?.phones?.[0]?.number || 'Contact'}`;
   if (msg.viewOnce) return msg.type === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)';
   if (msg.e2ee && msg.e2eeState !== 'ok' && !msg.text) return msg.e2eeState === 'before' ? '🔒 Message from before this device was linked' : '🔒 Message';
   const text = plainMentions(msg.text, useChat.getState().conversations[msg.conversationId], meId());

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart3, Camera, Check, Clock, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-react';
+import { BarChart3, Camera, Check, Clock, FileText, Image, Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, UserRound, X } from 'lucide-react';
+import { ShareContactDialog } from './ContactShare.jsx';
 import EmojiPicker from './EmojiPicker.jsx';
 import AttachmentPreview from './AttachmentPreview.jsx';
 import Menu from '../common/Menu.jsx';
@@ -9,7 +10,8 @@ import { MENTION_TOKEN, mentionName, plainMentions } from '../../lib/mentions.js
 import { useMentions } from './useMentions.jsx';
 import { fileKind, formatDuration } from '../../lib/format.js';
 import { useAuth } from '../../store/auth.js';
-import { canSendIn, useChat } from '../../store/chat.js';
+import { canSendIn, conversationTitle, useChat } from '../../store/chat.js';
+import { copyPicked, skippedText } from '../../lib/pickedFiles.js';
 import { toast, useUI } from '../../store/ui.js';
 
 const TYPING_THROTTLE_MS = 2500;
@@ -87,6 +89,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
   const [files, setFiles] = useState(null);
   const [pollOpen, setPollOpen] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [sharingContact, setSharingContact] = useState(false);
   const sendHold = useRef(null);
   const input = useRef(null);
   const fileInputs = { media: useRef(null), doc: useRef(null), camera: useRef(null) };
@@ -149,7 +152,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
 
   useEffect(() => {
     if (droppedFiles?.length) {
-      setFiles(droppedFiles);
+      openFiles(droppedFiles);
       onDroppedHandled();
     }
   }, [droppedFiles, onDroppedHandled]);
@@ -221,7 +224,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     const pasted = [...(e.clipboardData?.files || [])];
     if (pasted.length) {
       e.preventDefault();
-      setFiles(pasted);
+      openFiles(pasted);
     }
   }
 
@@ -237,14 +240,24 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
     });
   }
 
-  function sendFiles(list, caption, { viewOnce = false } = {}) {
-    list.forEach((file, i) => {
-      const kind = fileKind(file);
+  /** Each photo/video/document with its own caption (the reply goes with the first). */
+  function sendFiles(items, { viewOnce = false } = {}) {
+    items.forEach(({ file, caption }, i) => {
       if (file.size > 50 * 1024 * 1024) return toast(`${file.name} is larger than 50 MB`, 'error');
-      sendMedia(conv.id, file, { type: kind, text: i === 0 ? caption : '', replyTo: i === 0 ? replyTo : null, viewOnce });
+      sendMedia(conv.id, file, { type: fileKind(file), text: caption || '', replyTo: i === 0 ? replyTo : null, viewOnce });
     });
     setComposer(conv.id, { replyTo: null });
     setFiles(null);
+  }
+
+  /**
+   * Picked, dropped or pasted files: copied into memory right away (a phone's picked file can
+   * stop being readable soon after), then shown in the preview.
+   */
+  async function openFiles(list) {
+    const { files: copies, skipped } = await copyPicked(list);
+    if (skipped.length) toast(skippedText(skipped), 'error');
+    if (copies.length) setFiles(copies);
   }
 
   if (conv.me?.blocked) {
@@ -427,6 +440,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
             { label: 'Photos & videos', icon: Image, onClick: () => fileInputs.media.current.click() },
             { label: 'Camera', icon: Camera, onClick: () => fileInputs.camera.current.click() },
             { label: 'Document', icon: FileText, onClick: () => fileInputs.doc.current.click() },
+            { label: 'Contact', icon: UserRound, onClick: () => setSharingContact(true) },
             { label: 'Poll', icon: BarChart3, onClick: () => setPollOpen(true) },
             { label: 'Schedule message', icon: Clock, onClick: () => setScheduling(true) },
           ]}
@@ -448,7 +462,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           onChange={(e) => {
             const list = [...e.target.files];
             e.target.value = '';
-            if (list.length) setFiles(list);
+            if (list.length) openFiles(list);
           }}
         />
       ))}
@@ -463,6 +477,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           }}
         />
       )}
+      {sharingContact && <ShareContactDialog conv={conv} onClose={() => setSharingContact(false)} />}
       {scheduling && (
         <ScheduleDialog
           conv={conv}
@@ -481,6 +496,7 @@ export default function Composer({ conv, droppedFiles, onDroppedHandled }) {
           files={files}
           conv={conv}
           me={me}
+          title={conversationTitle(conv, me)}
           initialCaption={sharedCaption}
           onCancel={() => {
             setFiles(null);

@@ -8,7 +8,6 @@ import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/nati
 import { displayName } from './people.js';
 import { toast } from './ui.js';
 import * as e2ee from '../lib/e2ee/index.js';
-import { useChat } from './chat.js';
 
 // One active 1:1 call at a time. Media is peer-to-peer (WebRTC); the realtime service only
 // relays signaling messages.
@@ -79,8 +78,9 @@ async function setupTrusted(call, data) {
     useCall.getState().patch({ verified: true });
     return true;
   }
-  const encryptedChat = !!useChat.getState().conversations[call.conversationId]?.e2ee;
-  return !(encryptedChat && e2ee.enabled());
+  // Every chat is end-to-end encrypted: whenever this device can check, the call must check out
+  // (whether or not the chat has had an encrypted message yet).
+  return !e2ee.enabled();
 }
 
 /**

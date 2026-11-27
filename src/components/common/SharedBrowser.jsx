@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Link2, Play, Search, Smartphone, Star } from 'lucide-react';
+import { FileText, Link2, Play, Search, Smartphone, Star, UserRound } from 'lucide-react';
+import { ContactDetails } from '../chat/ContactShare.jsx';
+import { cardNumbers, cardTitle, readCard } from '../../lib/contactCard.js';
 import { api } from '../../lib/api.js';
 import * as e2ee from '../../lib/e2ee/index.js';
 import { formatBytes, formatListTime } from '../../lib/format.js';
@@ -15,6 +17,7 @@ export const SHARED_TABS = [
   { id: 'media', label: 'Media' },
   { id: 'docs', label: 'Docs' },
   { id: 'links', label: 'Links' },
+  { id: 'contacts', label: 'Contacts' },
   { id: 'apps', label: 'Apps' },
   { id: 'starred', label: 'Favourites' },
 ];
@@ -32,13 +35,18 @@ function matchesKind(m, kind) {
   const media = m.type === 'image' || m.type === 'video';
   const file = m.type === 'file' && !!m.media;
   const link = LINK.test(m.text || '');
+  const contact = m.type === 'contact' && !!m.contact;
   if (kind === 'media') return media;
   if (kind === 'docs') return file && !isApk(m);
   if (kind === 'apps') return file && isApk(m);
   if (kind === 'links') return link;
+  if (kind === 'contacts') return contact;
   if (kind === 'starred') return !!m.starred;
-  return media || file || link;
+  return media || file || link || contact;
 }
+
+/** What search looks at in a message (a contact card: its name and numbers). */
+const searchable = (m) => `${m.text || ''} ${m.media?.name || ''} ${m.contact?.name || ''} ${(m.contact?.phones || []).map((p) => p.number).join(' ')}`.toLowerCase();
 
 function Thumb({ message: m }) {
   const { src } = useMediaSrc(m.media?.url);
@@ -59,6 +67,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
   const [q, setQ] = useState('');
   const [state, setState] = useState({ items: null, hasMore: false, loading: true, offline: false });
   const [counts, setCounts] = useState(null);
+  const [viewing, setViewing] = useState(null); // a contact card opened from the list
 
   useEffect(() => {
     const t = setTimeout(() => setQ(query.trim()), 300);
@@ -72,6 +81,28 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
     if (before) params.set('before', before);
     if (!before && !counts) params.set('counts', '1');
     setState((s) => ({ ...s, loading: true }));
+    if (tab === 'contacts') {
+      // Contact cards are always end-to-end encrypted: only this device knows which messages are
+      // contacts (what it decrypted, and what's saved on it).
+      const ids = conversationId ? [conversationId] : Object.keys(useChat.getState().conversations);
+      const stored = (await Promise.all(ids.map((id) => readMessages(id, { limit: 2000 }).catch(() => [])))).flat().map(e2ee.reveal);
+      // (The same message can be known by its id and by the id it had while sending: one row each.)
+      const byId = new Map();
+      const seen = new Set();
+      for (const m of [...stored, ...encryptedShared('contacts', '')]) {
+        if (!m.conversationId || !useChat.getState().conversations[m.conversationId]) continue;
+        if (seen.has(m.id) || (m.clientId && seen.has(m.clientId))) continue;
+        seen.add(m.id);
+        if (m.clientId) seen.add(m.clientId);
+        byId.set(m.id, m);
+      }
+      const needle = q.toLowerCase();
+      const items = [...byId.values()]
+        .filter((m) => matchesKind(m, 'contacts') && (!needle || searchable(m).includes(needle)))
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      setState({ items, hasMore: false, loading: false, offline: false });
+      return;
+    }
     try {
       const data = await api(`/api/conversations/shared?${params}`);
       // End-to-end encrypted messages: the server can't see what they contain, so they come
@@ -79,7 +110,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
       const local = before || tab === 'starred' ? [] : encryptedShared(tab, q);
       if (data.counts) {
         const mine = before ? {} : Object.fromEntries(SHARED_TABS.map((t) => [t.id, t.id === 'starred' ? 0 : encryptedShared(t.id, '').length]));
-        setCounts(Object.fromEntries(Object.entries(data.counts).map(([k, n]) => [k, n + (mine[k] || 0)])));
+        setCounts(Object.fromEntries(SHARED_TABS.map(({ id }) => [id, (data.counts[id] || 0) + (mine[id] || 0)])));
       }
       const fresh = data.items.map(e2ee.reveal);
       const merged = before ? fresh : [...fresh, ...local].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -96,7 +127,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
       const needle = q.toLowerCase();
       const items = all
         .filter((m) => matchesKind(m, tab))
-        .filter((m) => !needle || `${m.text || ''} ${m.media?.name || ''}`.toLowerCase().includes(needle))
+        .filter((m) => !needle || searchable(m).includes(needle))
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       setState({ items, hasMore: false, loading: false, offline: true });
     }
@@ -108,7 +139,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
     return e2ee
       .localMessages({ conversationId })
       .filter((m) => !m.viewOnce && matchesKind(m, kind))
-      .filter((m) => !needle || `${m.text || ''} ${m.media?.name || ''}`.toLowerCase().includes(needle));
+      .filter((m) => !needle || searchable(m).includes(needle));
   }
 
   useEffect(() => {
@@ -126,6 +157,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
     useUI.getState().closePanel();
   };
   const open = (m) => {
+    if (m.type === 'contact' && tab !== 'starred') return setViewing(readCard(m.contact));
     if (m.type === 'image' || m.type === 'video') return openViewer({ url: m.media.url, type: m.type, name: m.media.name });
     if (m.type === 'file' && tab !== 'links' && tab !== 'starred') return openDocument(m.media).catch((e) => toast(e.message, 'error'));
     const url = firstLink(m.text);
@@ -184,6 +216,10 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
             );
             title = m.type === 'image' ? 'Photo' : 'Video';
             sub = m.text || '';
+          } else if (m.type === 'contact') {
+            icon = <UserRound size={20} />;
+            title = cardTitle(m.contact);
+            sub = m.contact?.name ? cardNumbers(m.contact) : '';
           } else if (m.type === 'file') {
             icon = apk ? <Smartphone size={20} /> : <FileText size={20} />;
             title = m.media?.name || 'Document';
@@ -214,6 +250,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
         })
       )}
 
+      {viewing && <ContactDetails card={viewing} user={undefined} onClose={() => setViewing(null)} />}
       {state.loading && <p className="panel-empty">Loading…</p>}
       {!state.loading && !items.length && (
         <p className="panel-empty">{q ? `Nothing matches “${q}”.` : `No ${SHARED_TABS.find((t) => t.id === tab).label.toLowerCase()} yet.`}</p>

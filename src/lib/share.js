@@ -18,10 +18,10 @@ async function nativeCopy(blob, name, key) {
   return path;
 }
 
-async function nativeShare(blob, name, { title, key } = {}) {
+async function nativeShare(blob, name, { title, key, text } = {}) {
   const path = await nativeCopy(blob, name, key);
   try {
-    await DeviceFiles.share({ path, mime: blob.type || 'application/octet-stream', title: title || 'Share' });
+    await DeviceFiles.share({ path, mime: blob.type || 'application/octet-stream', title: title || 'Share', ...(text && { text }) });
   } catch (err) {
     throw new Error(err?.code === 'NO_APP' ? 'No app on this phone can receive this file.' : 'Couldn’t share this file.');
   }
@@ -38,14 +38,14 @@ function download(blob, name) {
 
 /**
  * Share a file to another app (falls back to downloading it where sharing files isn't possible).
- * `key`: the chat file's address, to reuse its copy on the phone.
+ * `key`: the chat file's address, to reuse its copy on the phone. `text`: its caption, shared with it.
  */
-export async function shareFile(blob, name, { title, key } = {}) {
-  if (nativeFilesSupported()) return nativeShare(blob, name, { title, key });
+export async function shareFile(blob, name, { title, key, text } = {}) {
+  if (nativeFilesSupported()) return nativeShare(blob, name, { title, key, text });
   const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: title || name });
+      await navigator.share({ files: [file], title: title || name, ...(text && { text }) });
       return undefined;
     } catch (err) {
       if (err?.name === 'AbortError') return undefined; // closed the sheet
