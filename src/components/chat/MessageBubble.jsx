@@ -219,6 +219,20 @@ function MissingMedia({ type }) {
   );
 }
 
+/** A photo/video/file that's still being sent: "Photo on its way…" in its place. */
+function IncomingMedia({ msg }) {
+  const label = { image: 'Photo', video: 'Video', voice: 'Voice message', audio: 'Audio', file: msg.media?.name || 'Document' }[msg.type] || 'File';
+  return (
+    <div className={`media-missing media-incoming ${msg.type}`}>
+      <ProgressRing value={0} />
+      <span>
+        {label} on its way…
+        {msg.media?.size ? ` · ${formatBytes(msg.media.size)}` : ''}
+      </span>
+    </div>
+  );
+}
+
 /** A ring that fills as a download progresses (spins while the size isn't known yet). */
 function ProgressRing({ value, size = 36 }) {
   const r = 15;
@@ -276,7 +290,9 @@ function MediaLoading({ type, url, size }) {
 }
 
 function Media({ msg }) {
-  const uploading = msg.pending && msg.progress != null && msg.progress < 1 && msg.status !== 'failed';
+  const uploading = (msg.pending || msg.needsUpload) && msg.progress != null && msg.progress < 1 && msg.status !== 'failed';
+  // Someone else's file still on its way (its place is kept in the chat until it arrives).
+  if (msg.uploading && !msg.needsUpload) return <IncomingMedia msg={msg} />;
   // Documents download only when opened (or by auto-download / "Save chat for offline").
   if (msg.type === 'file') return <DocumentCard media={msg.media} uploadingProgress={uploading ? msg.progress : null} />;
   return <VisualMedia msg={msg} uploading={uploading} />;
@@ -576,7 +592,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
   const reply = () => chat.setComposer(conv.id, { replyTo: msg, editing: null });
   const react = (emoji) => chat.react(msg, emoji);
 
-  const menuItems = msg.pending
+  const menuItems = msg.pending || msg.needsUpload
     ? [
         msg.status === 'failed' && { label: 'Retry', icon: RotateCw, onClick: () => chat.deliver(msg) },
         { label: 'Delete', icon: Trash2, danger: true, onClick: () => chat.deleteMessage(msg, false) },
@@ -592,8 +608,9 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             icon: Copy,
             onClick: () => navigator.clipboard?.writeText(plainMentions(msg.text, conv, me)).then(() => toast('Copied'), () => toast('Could not copy')),
           },
-          !special && { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
-          !special && hasMedia && { label: 'Share', icon: Share2, onClick: () => shareMedia(msg, conv, me) },
+          // (A file still on its way can't be passed on yet.)
+          !special && !msg.uploading && { label: 'Forward', icon: Forward, onClick: () => setForwarding(msg) },
+          !special && hasMedia && !msg.uploading && { label: 'Share', icon: Share2, onClick: () => shareMedia(msg, conv, me) },
           { label: msg.starred ? 'Unstar' : 'Star', icon: msg.starred ? StarOff : Star, onClick: () => chat.toggleStar(msg) },
           canSendIn(conv, me) && !conv.me?.blocked && {
             label: pinned ? 'Unpin' : 'Pin',

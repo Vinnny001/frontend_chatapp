@@ -1204,6 +1204,41 @@
   font-weight: 700;
   letter-spacing: 0.03em;
 }
+.thumb-order {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  z-index: 1;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.attach-thumbs button.drop-target {
+  border-color: #fff;
+  opacity: 1;
+}
+.attach-thumbs button[draggable='true'] {
+  cursor: grab;
+}
+.attach-top .icon-btn:disabled {
+  opacity: 0.35;
+}
+.media-incoming {
+  flex-direction: row;
+  gap: 10px;
+}
+.media-incoming.image,
+.media-incoming.video {
+  flex-direction: column;
+}
 .thumb-captioned {
   position: absolute;
   right: 4px;

@@ -51,6 +51,23 @@ function inOrder(convId, fn) {
   return run;
 }
 
+const cancelledUploads = new Set(); // clientIds deleted while their file was uploading
+
+/** Uploads run a few at a time (more would only slow each one down on a phone connection). */
+const MAX_UPLOADS = 3;
+let uploadsRunning = 0;
+const uploadWaiters = [];
+async function uploadSlot(fn) {
+  if (uploadsRunning >= MAX_UPLOADS) await new Promise((r) => uploadWaiters.push(r));
+  uploadsRunning++;
+  try {
+    return await fn();
+  } finally {
+    uploadsRunning--;
+    uploadWaiters.shift()?.();
+  }
+}
+
 const isOnline = () => !!getSocket()?.connected;
 const authToken = () => useAuth.getState().token;
 // Errors that mean "no connection" (keep queued) rather than "server refused" (show failed).
@@ -105,6 +122,12 @@ function mergeItems(...lists) {
       const m = e2ee.reveal(raw); // encrypted messages: the text this device decrypted
       const key = keyOf(m);
       const prev = byKey.get(key);
+      // My file still uploading here, and the server's copy of its place-holder: keep showing my
+      // copy (preview, progress) in the place the server gave it.
+      if (prev?.needsUpload && m.uploading && !m.pending) {
+        byKey.set(key, { ...prev, id: m.id, createdAt: m.createdAt, pending: false, uploading: true, reservedId: m.id });
+        continue;
+      }
       if (prev && !prev.pending && m.pending) continue;
       byKey.set(key, prev && !(prev.pending && !m.pending) ? { ...prev, ...m, partial: m.partial } : m);
     }
@@ -187,7 +210,8 @@ export const isOnlineSelector = (userId) => (s) => !!presenceSelector(userId)(s)
 
 /** sent → delivered → read, derived from every other member's receipt watermark. */
 export function messageStatus(msg, conv, me) {
-  if (msg.pending) return msg.status === 'failed' ? 'failed' : 'pending';
+  // (needsUpload: its place is in the chat, its file still uploading: not sent yet)
+  if (msg.pending || msg.needsUpload) return msg.status === 'failed' ? 'failed' : 'pending';
   if (msg.sender !== me || !conv) return null;
   // Encrypted while someone had no device: it hasn't reached them, whatever their receipts say.
   if (msg.e2eePending) return 'sent';
@@ -260,6 +284,72 @@ export const useChat = create((set, get) => {
     patchThread(convId, (t) => ({
       items: t.items.map((m) => (keyOf(m) === key || m.id === key ? { ...m, ...patch } : m)),
     }));
+
+  /**
+   * Sends a photo/video/file in two steps:
+   *  1. Its place in the chat: a small encrypted message saying what's coming (its name, size,
+   *     caption), sent in order with the rest of the chat, so it takes milliseconds and what's
+   *     sent after it (text, smaller files) never waits for it, and never overtakes it.
+   *  2. Its file, uploaded alongside the others (a few at a time); then the message is filled
+   *     in where it is (message:complete), for everyone.
+   * A retry after a failure or an app restart picks up where it stopped (the place is kept;
+   * sending it again with the same clientId gets the same message back).
+   */
+  const sendInPlace = async (convId, clientId, current) => {
+    // 1) the place
+    if (!current().reservedId) {
+      const placed = await inOrder(convId, async () => {
+        const m = current();
+        const { url, key, iv, ...meta } = m.media || {}; // (no file address or key yet)
+        const payload = contentForEncryption({ ...m, media: meta, remoteMedia: null });
+        const out = await e2ee.encryptMessage(convId, payload);
+        if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
+        const body = sendPayload({ clientId, e2eeOut: { ...out, payload }, replyTo: m.replyTo, forwarded: m.forwarded });
+        const ack = await emitAck('message:send', { conversationId: convId, ...body, uploading: true }, 20000);
+        return { message: ack.message, payload, out };
+      });
+      const { message } = placed;
+      e2ee.rememberSent(message.id, placed.payload, placed.out.ciphertext, { conv: convId, sender: meId(), at: message.createdAt }, placed.out.missing);
+      patchItem(convId, clientId, { id: message.id, reservedId: message.id, createdAt: message.createdAt, pending: false, uploading: true, placed: message });
+      patchConversation(convId, (c) => (c.lastMessage?.clientId === clientId ? { lastMessageAt: message.createdAt } : {}));
+      cancelBackground(clientId);
+      if (useUI.getState().sounds) playSent();
+    }
+    const reservedId = current().reservedId;
+
+    // 2) the file (alongside the others)
+    if (!current().remoteMedia) {
+      await uploadSlot(async () => {
+        const file = pendingFiles.get(clientId) || (await getStoredMedia(pendingKey(clientId)));
+        if (!file) throw new Error('File is no longer available');
+        const sealed = await encryptFile(file);
+        const m = current();
+        const fileKey = { key: sealed.key, iv: sealed.iv, name: m.media?.name || file.name, size: file.size, mime: file.type || m.media?.mime };
+        const uploaded = await uploadFile(sealed.blob, { name: 'encrypted', onProgress: (progress) => patchItem(convId, clientId, { progress }) });
+        const remoteMedia = { ...uploaded, duration: m.media?.duration, ...fileKey };
+        await rememberMedia(uploaded.url, file); // our copy under its real address: never downloaded again
+        registerMediaKey(remoteMedia);
+        patchItem(convId, clientId, { remoteMedia });
+      });
+    }
+
+    // 3) fill in the message where it is (unless it was cancelled meanwhile)
+    if (cancelledUploads.has(clientId)) return;
+    const m = current();
+    const payload = contentForEncryption(m); // (with the uploaded file's address and key)
+    const out = await e2ee.encryptMessage(convId, payload);
+    if (!out) throw new Error('Couldn’t encrypt this message. Try again.');
+    // (Known here before the server tells this device about it, so it's never "decrypted" here.)
+    e2ee.rememberSent(reservedId, payload, out.ciphertext, { conv: convId, sender: meId(), at: m.createdAt }, out.missing);
+    await emitAck('message:complete', { messageId: reservedId, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch } }, 20000);
+    pendingFiles.delete(clientId);
+    deleteStoredMedia(pendingKey(clientId));
+    const base = m.placed || { id: reservedId, conversationId: convId, sender: meId(), clientId, type: 'text', createdAt: m.createdAt, reactions: [] };
+    const done = e2ee.reveal({ ...base, uploading: undefined, e2ee: { ciphertext: out.ciphertext, epoch: out.epoch, device: base.e2ee?.device } });
+    patchItem(convId, clientId, { ...done, needsUpload: false, uploading: false, progress: undefined, status: undefined, placed: undefined, e2eeOut: undefined });
+    saveMessages([done]);
+    patchConversation(convId, (c) => (c.lastMessage?.clientId === clientId || c.lastMessage?.id === reservedId ? { lastMessage: done } : {}));
+  };
 
   /** Encrypts a pending message once (kept on it, so a retry sends the same ciphertext). */
   const encryptOut = async (m, { offline = false } = {}) => {
@@ -964,6 +1054,14 @@ export const useChat = create((set, get) => {
         const encrypt = !current().e2eeOut;
         if (encrypt) await e2ee.whenStarted();
         if (encrypt && !e2ee.enabled()) throw new Error('Encryption isn’t running on this device, so nothing can be sent.');
+        // A photo, video or file: it takes its place in the chat now and its file follows, so it
+        // stays where it was sent (a big video isn't overtaken by what's sent after it) while
+        // everything uploads at the same time. View once keeps the one-step way (the server needs
+        // its file's address from the start).
+        if (current().needsUpload && encrypt && !current().viewOnce) {
+          await sendInPlace(convId, msg.clientId, current);
+          return;
+        }
         if (current().needsUpload) {
           // In memory normally; after an app restart it comes back from on-device storage.
           const file = pendingFiles.get(msg.clientId) || (await getStoredMedia(pendingKey(msg.clientId)));
@@ -1057,7 +1155,8 @@ export const useChat = create((set, get) => {
     async retryPending() {
       await get().absorbBackgroundDeliveries(); // don't resend what the background sender already sent
       for (const t of Object.values(get().threads)) {
-        for (const m of t.items) if (m.pending && m.status === 'pending') get().deliver(m);
+        // (Also files whose message already has its place in the chat but hadn't finished uploading.)
+        for (const m of t.items) if ((m.pending || m.needsUpload) && m.status === 'pending') get().deliver(m);
       }
       if (isOnline()) get().flushScheduledQueue();
     },
@@ -1128,6 +1227,15 @@ export const useChat = create((set, get) => {
     },
 
     async deleteMessage(msg, forEveryone) {
+      if (msg.needsUpload && msg.reservedId) {
+        // Its place is already in the chat (the others see it's coming): cancel it for everyone.
+        cancelledUploads.add(msg.clientId);
+        pendingFiles.delete(msg.clientId);
+        deleteStoredMedia(pendingKey(msg.clientId));
+        get().onMessageRemoved({ id: msg.id, conversationId: msg.conversationId });
+        emitAck('message:delete', { messageId: msg.reservedId, forEveryone: true }).catch(() => {});
+        return;
+      }
       if (msg.pending) {
         pendingFiles.delete(msg.clientId);
         deleteStoredMedia(pendingKey(msg.clientId));
@@ -1374,6 +1482,11 @@ export const useChat = create((set, get) => {
         const shown = e2ee.reveal({ ...(before || {}), id, conversationId, createdAt: before?.createdAt || new Date().toISOString(), ...rest });
         rest.text = shown.text;
         rest.e2eeState = shown.e2eeState;
+        // (Already readable here, e.g. a file that finished uploading: its file and kind too.)
+        if (shown.e2eeState === 'ok' && !shown.e2eeStale) {
+          rest.type = shown.type;
+          rest.media = shown.media;
+        }
       }
       patchItem(conversationId, id, { id, conversationId, ...rest });
       patchStoredMessage({ id, conversationId, ...rest });

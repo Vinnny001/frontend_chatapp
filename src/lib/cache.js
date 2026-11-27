@@ -26,7 +26,8 @@ export function saveCache(userId, { conversations, threads, composer }) {
     const items = (threads[c.id]?.items || [])
       .slice(-MAX_MESSAGES)
       .map(({ progress, error, ...m }) => {
-        if (!m.pending) return m;
+        // (needsUpload: already has its place in the chat, its file still uploading)
+        if (!m.pending && !m.needsUpload) return m;
         // Not uploaded yet: the file itself is kept in on-device storage under pendingKey,
         // because the in-memory blob: URL is gone after the app restarts.
         const media = m.needsUpload && m.media ? { ...m.media, url: pendingKey(m.clientId) } : m.media;

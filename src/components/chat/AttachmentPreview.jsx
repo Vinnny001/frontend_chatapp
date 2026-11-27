@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Play, Plus, Send, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, FileText, Play, Plus, Send, Trash2, X } from 'lucide-react';
 import { fileKind, formatBytes } from '../../lib/format.js';
 import { MAX_PICK, copyPicked, skippedText } from '../../lib/pickedFiles.js';
 import { toast, useUI } from '../../store/ui.js';
@@ -53,6 +53,19 @@ export default function AttachmentPreview({ files, conv, me, title, onCancel, on
     setIndex(Math.max(0, Math.min(items.length - 1, i)));
   };
 
+  /** Puts item `from` at position `to` (they're sent in this order, and stay in it in the chat). */
+  function move(from, to) {
+    if (from === to || to < 0 || to >= items.length) return;
+    setItems((list) => {
+      const next = [...list];
+      const [it] = next.splice(from, 1);
+      next.splice(to, 0, it);
+      return next;
+    });
+    setIndex(to);
+  }
+  const drag = useRef(null);
+
   function remove() {
     if (items.length === 1) return onCancel();
     setItems((list) => list.filter((it) => it.key !== item.key));
@@ -104,6 +117,16 @@ export default function AttachmentPreview({ files, conv, me, title, onCancel, on
             {items.length > 1 ? ` · ${formatBytes(total)} in all` : ''}
           </span>
         </div>
+        {items.length > 1 && (
+          <>
+            <button className="icon-btn" onClick={() => move(index, index - 1)} disabled={index === 0} aria-label="Move earlier" title="Move earlier (sent before the others)">
+              <ArrowLeft size={20} />
+            </button>
+            <button className="icon-btn" onClick={() => move(index, index + 1)} disabled={index === items.length - 1} aria-label="Move later" title="Move later">
+              <ArrowRight size={20} />
+            </button>
+          </>
+        )}
         <button className="icon-btn" onClick={remove} aria-label={items.length > 1 ? 'Remove this one' : 'Cancel'} title="Remove">
           <Trash2 size={20} />
         </button>
@@ -144,7 +167,37 @@ export default function AttachmentPreview({ files, conv, me, title, onCancel, on
       <div className="attach-bottom">
         <div className="attach-thumbs" role="tablist" aria-label="Files to send">
           {items.map((it, i) => (
-            <button key={it.key} role="tab" aria-selected={i === index} className={i === index ? 'active' : ''} onClick={() => go(i)} title={it.file.name}>
+            <button
+              key={it.key}
+              role="tab"
+              aria-selected={i === index}
+              className={`${i === index ? 'active' : ''} ${drag.current?.over === i ? 'drop-target' : ''}`}
+              onClick={() => go(i)}
+              title={`${i + 1}. ${it.file.name}${items.length > 1 ? ' (drag to change the order)' : ''}`}
+              draggable={items.length > 1}
+              onDragStart={(e) => {
+                drag.current = { from: i };
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragOver={(e) => {
+                if (!drag.current) return;
+                e.preventDefault();
+                if (drag.current.over !== i) {
+                  drag.current.over = i;
+                  setItems((list) => [...list]); // (shows where it will go)
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (drag.current) move(drag.current.from, i);
+                drag.current = null;
+              }}
+              onDragEnd={() => {
+                drag.current = null;
+                setItems((list) => [...list]);
+              }}
+            >
+              {items.length > 1 && <span className="thumb-order">{i + 1}</span>}
               {urlOf(it) && it.file.type.startsWith('image/') && <img src={urlOf(it)} alt="" />}
               {urlOf(it) && it.file.type.startsWith('video/') && (
                 <>
