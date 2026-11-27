@@ -71,7 +71,7 @@ export default function GroupCallOverlay() {
   }
 
   const alone = active.state === 'connected' && participants.length <= 1;
-  const status = active.state === 'connecting' ? 'Connecting…' : alone ? 'Ringing the group…' : timer;
+  const status = active.state === 'connecting' ? 'Connecting…' : active.reconnecting ? 'Reconnecting…' : alone ? 'Ringing the group…' : timer;
   return (
     <div className={`call-overlay group-call ${active.kind}`}>
       <header className="group-call-header">

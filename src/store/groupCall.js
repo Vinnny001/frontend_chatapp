@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../lib/api.js';
+import { hasRelay, iceServers } from '../lib/iceServers.js';
 import { startRingback, startRingtone, stopRingback, stopRingtone } from '../lib/notify.js';
 import { clearCallNotification, isNativeApp } from '../lib/native.js';
 import { useAuth } from './auth.js';
@@ -120,6 +121,7 @@ export const useGroupCall = create((set, get) => ({
     clearTimeout(ringTimer);
     stopRingtone();
     set({ incoming: null, active: { conversationId, kind, state: 'connecting', muted: false, cameraOn: kind === 'video', facing: 'user' } });
+    const iceServersPromise = iceServers(); // (fetched while the call is set up)
     try {
       const { url, token, groupCall, started } = await api(`/api/conversations/${conversationId}/group-call`, {
         method: 'POST',
@@ -173,11 +175,27 @@ export const useGroupCall = create((set, get) => ({
         .on(RoomEvent.LocalTrackPublished, refresh)
         .on(RoomEvent.LocalTrackUnpublished, refresh)
         .on(RoomEvent.ActiveSpeakersChanged, refresh)
+        // Connection dropped (weak signal, network change, busy phone): LiveKit gets it back by
+        // itself; meanwhile the call says "Reconnecting…" rather than looking frozen.
+        .on(RoomEvent.Reconnecting, () => set((s) => ({ active: s.active && { ...s.active, reconnecting: true } })))
+        .on(RoomEvent.SignalReconnecting, () => set((s) => ({ active: s.active && { ...s.active, reconnecting: true } })))
+        .on(RoomEvent.Reconnected, () => {
+          set((s) => ({ active: s.active && { ...s.active, reconnecting: false } }));
+          refresh();
+        })
         .on(RoomEvent.Disconnected, () => get().cleanup());
-      // (Development only: window.__lkRelay forces LiveKit's relay, for testing restrictive networks.)
-      const rtcConfig = import.meta.env.DEV && window.__lkRelay ? { iceTransportPolicy: 'relay' } : undefined;
+      // Our STUN/TURN servers (Cloudflare relay): the call server's media addresses are IPv4, which
+      // phones on IPv6-only networks can't reach directly; the relay is reached by name, and it
+      // also gets through strict Wi-Fi. It only forwards encrypted frames. Without a relay from
+      // the API, LiveKit's own servers are used as before.
+      const servers = await iceServersPromise;
+      const rtcConfig = {
+        ...(hasRelay() && { iceServers: servers }),
+        // (Development only: window.__lkRelay forces the relay, for testing restrictive networks.)
+        ...(import.meta.env.DEV && window.__lkRelay && { iceTransportPolicy: 'relay' }),
+      };
       if (e2eeOptions) await room.setE2EEEnabled(true);
-      await room.connect(url, token, rtcConfig ? { rtcConfig } : undefined);
+      await room.connect(url, token, Object.keys(rtcConfig).length ? { rtcConfig } : undefined);
       await room.startAudio().catch(() => {});
       await room.localParticipant.setMicrophoneEnabled(true);
       const video = groupCall.kind === 'video' || kind === 'video';

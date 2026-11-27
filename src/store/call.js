@@ -1,7 +1,6 @@
 import { create } from 'zustand';
-import { ICE_SERVERS } from '../lib/config.js';
+import { iceServers, loadIceServers } from '../lib/iceServers.js';
 import { emitAck } from '../lib/socket.js';
-import { api } from '../lib/api.js';
 import { uid } from '../lib/format.js';
 import { playEndTone, startRingback, startRingtone, stopRingback, stopRingtone } from '../lib/notify.js';
 import { clearCallNotification, isNativeApp, leaveNativeCall } from '../lib/native.js';
@@ -24,29 +23,6 @@ let externalTimer = null;
 let connectTimer = null;
 let recoverTimer = null;
 let restarts = 0;
-
-// STUN/TURN servers from the API (TURN relays the encrypted call when a direct connection
-// isn't possible, e.g. on mobile data). Fetched ahead of time and kept until they expire.
-let ice = null; // { servers, until }
-let iceLoading = null;
-function loadIceServers() {
-  if (ice && ice.until > Date.now()) return Promise.resolve(ice.servers);
-  iceLoading ??= api('/api/calls/ice-servers')
-    .then(({ iceServers, ttl }) => {
-      // (A relay set in the app's own build settings is kept too.)
-      const extra = ICE_SERVERS.filter((s) => [].concat(s.urls).some((u) => /^turns?:/.test(u)));
-      const servers = [...(iceServers?.length ? iceServers : ICE_SERVERS.slice(0, 1)), ...extra];
-      ice = { servers, until: Date.now() + Math.max(60, (ttl || 3600) - 60) * 1000 };
-      return servers;
-    })
-    .catch(() => ICE_SERVERS)
-    .finally(() => {
-      iceLoading = null;
-    });
-  return iceLoading;
-}
-/** The servers, without holding the call up for more than a few seconds. */
-const iceServers = () => Promise.race([loadIceServers(), new Promise((r) => setTimeout(() => r(ice?.servers || ICE_SERVERS), 4000))]);
 
 async function getMedia(kind, facingMode = 'user') {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls are not supported on this device');
