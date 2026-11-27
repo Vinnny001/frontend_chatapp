@@ -1112,7 +1112,8 @@ export const useChat = create((set, get) => {
         if (isNetworkError(e)) {
           // Connection dropped mid-send: stay queued and try again automatically.
           patchItem(convId, msg.clientId, { status: 'pending' });
-          if (!(encryptedChat() && current().needsUpload)) queueInBackground(current(), authToken(), fileFor(msg.clientId));
+          // (A file not uploaded yet waits for the app: it has to be encrypted before it's uploaded.)
+          if (!current().needsUpload) queueInBackground(current(), authToken(), fileFor(msg.clientId));
         } else {
           patchItem(convId, msg.clientId, { status: 'failed', error: e.message });
           toast(e.message, 'error');

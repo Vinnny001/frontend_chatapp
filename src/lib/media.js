@@ -102,9 +102,39 @@ export async function ensureMedia(url) {
   return job;
 }
 
+// Files already shown in this session, ready to show again at once: url -> { src, refs }.
+// Kept while anything shows them; the oldest unused ones are let go beyond a limit (a video
+// that's playing is never pulled from under it).
+const shown = new Map();
+const MAX_SHOWN = 150;
+const shownUrl = (url) => (url && shown.get(url)?.src) || null;
+function holdUrl(url, blob) {
+  let entry = shown.get(url);
+  if (!entry) {
+    if (!blob) return null;
+    entry = { src: URL.createObjectURL(blob), refs: 0 };
+  }
+  shown.delete(url); // (most recently used last)
+  shown.set(url, entry);
+  entry.refs++;
+  if (shown.size > MAX_SHOWN) {
+    for (const [u, e] of shown) {
+      if (shown.size <= MAX_SHOWN) break;
+      if (e.refs > 0) continue;
+      URL.revokeObjectURL(e.src);
+      shown.delete(u);
+    }
+  }
+  return entry.src;
+}
+function releaseUrl(url) {
+  const entry = shown.get(url);
+  if (entry) entry.refs = Math.max(0, entry.refs - 1);
+}
+
 /** React hook: whether a file is saved on this device (so it opens offline). */
 export function useIsStored(url) {
-  const [stored, setStored] = useState(() => !!url && inMemory(url));
+  const [stored, setStored] = useState(() => !!url && (inMemory(url) || shown.has(url)));
   useEffect(() => {
     if (!url || inMemory(url)) return undefined;
     let cancelled = false;
@@ -165,7 +195,8 @@ export const mediaItemsOf = (messages) =>
  * device and we're offline.
  */
 export function useMediaSrc(url, { auto = true } = {}) {
-  const [state, setState] = useState(() => ({ src: url && inMemory(url) ? url : null, missing: false, needsDownload: false }));
+  // Shown before: ready at once (a chat opened again shows its photos straight away).
+  const [state, setState] = useState(() => ({ src: url && inMemory(url) ? url : shownUrl(url), missing: false, needsDownload: false }));
   const [downloading, setDownloading] = useState(false);
   const [version, setVersion] = useState(0); // bumped after a manual download
 
@@ -174,13 +205,22 @@ export function useMediaSrc(url, { auto = true } = {}) {
       setState({ src: url || null, missing: false, needsDownload: false });
       return undefined;
     }
-    let objectUrl = null;
     let cancelled = false;
+    let held = null;
+    const show = (blob) => {
+      held = holdUrl(url, blob);
+      setState({ src: held, missing: false, needsDownload: false });
+    };
+    const cached = shownUrl(url);
+    if (cached) {
+      held = holdUrl(url);
+      setState({ src: cached, missing: false, needsDownload: false });
+      return () => releaseUrl(url);
+    }
     getStoredMedia(url).then((blob) => {
       if (cancelled) return;
       if (blob) {
-        objectUrl = URL.createObjectURL(blob);
-        setState({ src: objectUrl, missing: false, needsDownload: false });
+        show(blob);
       } else if (!downloadable(url) || navigator.onLine === false) {
         setState({ src: null, missing: true, needsDownload: false });
       } else if (!auto) {
@@ -189,9 +229,7 @@ export function useMediaSrc(url, { auto = true } = {}) {
         // Encrypted: it has to be downloaded and decrypted before it can be shown.
         setState({ src: null, missing: false, needsDownload: false });
         ensureMedia(url).then((b) => {
-          if (cancelled || !b) return;
-          objectUrl = URL.createObjectURL(b);
-          setState({ src: objectUrl, missing: false, needsDownload: false });
+          if (!cancelled && b) show(b);
         });
       } else {
         setState({ src: mediaUrl(url), missing: false, needsDownload: false });
@@ -200,7 +238,7 @@ export function useMediaSrc(url, { auto = true } = {}) {
     });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (held) releaseUrl(url);
     };
   }, [url, auto, version]);
 

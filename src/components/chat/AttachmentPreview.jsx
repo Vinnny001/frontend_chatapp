@@ -43,8 +43,11 @@ export default function AttachmentPreview({ files, conv, me, title, onCancel, on
 
   const kind = item ? fileKind(item.file) : 'file';
   const allMedia = items.every((it) => /^(image|video)\//.test(it.file.type));
-  // View once: a single photo or video.
+  // View once: only when sending a single photo or video. Adding more turns it off (and hides it).
   const canViewOnce = items.length === 1 && (kind === 'image' || kind === 'video');
+  useEffect(() => {
+    if (!canViewOnce) setViewOnce(false);
+  }, [canViewOnce]);
   const total = useMemo(() => items.reduce((n, it) => n + it.file.size, 0), [items]);
 
   const send = () => onSend(items.map((it) => ({ file: it.file, caption: mentions.withTokens(it.caption.trim()) })), { viewOnce: canViewOnce && viewOnce });

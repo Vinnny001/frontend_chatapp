@@ -15,12 +15,26 @@ let openFor = null;
 export function openLocalDb(userId) {
   if (!userId || openFor === userId) return;
   openFor = userId;
-  dbPromise = openDB(dbName(userId), 1, {
-    upgrade(db) {
-      const messages = db.createObjectStore('messages', { keyPath: 'id' });
-      messages.createIndex('byConv', ['conversationId', 'createdAt']);
-      const media = db.createObjectStore('media', { keyPath: 'url' });
-      media.createIndex('byUsed', 'usedAt');
+  dbPromise = openDB(dbName(userId), 2, {
+    async upgrade(db, oldVersion, _newVersion, tx) {
+      if (oldVersion < 1) {
+        const messages = db.createObjectStore('messages', { keyPath: 'id' });
+        messages.createIndex('byConv', ['conversationId', 'createdAt']);
+        const media = db.createObjectStore('media', { keyPath: 'url' });
+        media.createIndex('byUsed', 'usedAt');
+      }
+      if (oldVersion < 2) {
+        // Size and last-viewed time of each saved file, kept apart from the file itself: noting
+        // that a photo was viewed no longer rewrites the photo (slow for videos, and it held up
+        // every other file being read when a chat opened).
+        const meta = db.createObjectStore('mediaMeta', { keyPath: 'url' });
+        meta.createIndex('byUsed', 'usedAt');
+        if (oldVersion >= 1) {
+          for (let c = await tx.objectStore('media').openCursor(); c; c = await c.continue()) {
+            meta.put({ url: c.value.url, size: c.value.size || 0, usedAt: c.value.usedAt || 0 });
+          }
+        }
+      }
     },
   }).catch((err) => {
     console.warn('Offline storage unavailable', err);
@@ -115,13 +129,26 @@ export async function allStoredMessages(conversationId, { from = '', to = '￿' 
 
 // ------------------------------------------------------------------ media
 
+// When each file was last noted as viewed in this session (noted at most every few hours).
+const notedUse = new Map();
+const NOTE_EVERY_MS = 6 * 3600 * 1000;
+
+/** Notes that a saved file was viewed (for which ones go first when space runs out). Cheap. */
+function noteUsed(d, url, size) {
+  const now = Date.now();
+  if (now - (notedUse.get(url) || 0) < NOTE_EVERY_MS) return;
+  notedUse.set(url, now);
+  d.get('mediaMeta', url)
+    .then((m) => d.put('mediaMeta', { url, size: m?.size ?? size ?? 0, usedAt: now }))
+    .catch(() => {});
+}
+
 export async function getStoredMedia(url) {
   const d = await db();
   if (!d || !url) return null;
   const rec = await d.get('media', url).catch(() => null);
   if (!rec) return null;
-  // Remember it was viewed (for eviction order); no need to wait for this.
-  d.put('media', { ...rec, usedAt: Date.now() }).catch(() => {});
+  noteUsed(d, url, rec.size);
   return rec.blob;
 }
 
@@ -132,7 +159,10 @@ export async function hasStoredMedia(url) {
 
 export async function deleteStoredMedia(url) {
   const d = await db();
-  if (d && url) await d.delete('media', url).catch(() => {});
+  if (!d || !url) return;
+  await d.delete('media', url).catch(() => {});
+  await d.delete('mediaMeta', url).catch(() => {});
+  notedUse.delete(url);
 }
 
 // Told when a file is saved on the device (a document shows as downloaded at once).
@@ -145,9 +175,12 @@ export function onMediaStored(fn) {
 export async function putStoredMedia(url, blob) {
   const d = await db();
   if (!d || !url || !blob) return;
-  await d.put('media', { url, blob, size: blob.size, usedAt: Date.now() }).catch(() => {});
+  const now = Date.now();
+  await d.put('media', { url, blob, size: blob.size, usedAt: now }).catch(() => {});
+  await d.put('mediaMeta', { url, size: blob.size, usedAt: now }).catch(() => {});
+  notedUse.set(url, now);
   for (const fn of storedListeners) fn(url);
-  evictMedia();
+  scheduleEviction();
 }
 
 /** Bytes used by downloaded media (files still waiting to be sent aren't counted). */
@@ -156,7 +189,7 @@ export async function mediaUsage() {
   if (!d) return { bytes: 0, files: 0 };
   let bytes = 0;
   let files = 0;
-  for (let c = await d.transaction('media').store.openCursor(); c; c = await c.continue()) {
+  for (let c = await d.transaction('mediaMeta').store.openCursor(); c; c = await c.continue()) {
     if (String(c.key).startsWith('pending:')) continue;
     bytes += c.value.size || 0;
     files += 1;
@@ -168,11 +201,22 @@ export async function mediaUsage() {
 export async function clearDownloadedMedia() {
   const d = await db();
   if (!d) return;
-  const tx = d.transaction('media', 'readwrite');
-  for (let c = await tx.store.openCursor(); c; c = await c.continue()) {
-    if (!String(c.key).startsWith('pending:')) c.delete();
+  const tx = d.transaction(['media', 'mediaMeta'], 'readwrite');
+  for (const store of ['media', 'mediaMeta']) {
+    for (let c = await tx.objectStore(store).openCursor(); c; c = await c.continue()) {
+      if (!String(c.key).startsWith('pending:')) c.delete();
+    }
   }
   await tx.done.catch(() => {});
+  notedUse.clear();
+}
+
+// Space check: a little after files are saved (one run for a burst of downloads), using only
+// the small size/last-viewed records, never the files themselves.
+let evictTimer = null;
+function scheduleEviction() {
+  clearTimeout(evictTimer);
+  evictTimer = setTimeout(evictMedia, 5000);
 }
 
 let evicting = false;
@@ -182,14 +226,15 @@ async function evictMedia() {
   try {
     const d = await db();
     if (!d) return;
-    const tx = d.transaction('media', 'readwrite');
-    const index = tx.store.index('byUsed');
+    const tx = d.transaction(['media', 'mediaMeta'], 'readwrite');
+    const index = tx.objectStore('mediaMeta').index('byUsed');
     let total = 0;
     for (let c = await index.openCursor(); c; c = await c.continue()) total += c.value.size || 0;
     // Oldest-viewed first (files waiting to be sent are never removed).
     for (let c = await index.openCursor(); c && total > MEDIA_BUDGET_BYTES; c = await c.continue()) {
-      if (String(c.key).startsWith('pending:')) continue;
+      if (String(c.primaryKey).startsWith('pending:')) continue;
       total -= c.value.size || 0;
+      tx.objectStore('media').delete(c.primaryKey);
       c.delete();
     }
     await tx.done;
