@@ -19,6 +19,7 @@ import { connectionKind } from '../lib/network.js';
 import { storage } from '../lib/storage.js';
 import { playIncoming, playSent, showNotification } from '../lib/notify.js';
 import { plainMentions } from '../lib/mentions.js';
+import { cardsOf, cardsSummary } from '../lib/contactCard.js';
 import * as e2ee from '../lib/e2ee/index.js';
 import { encryptFile, registerMediaKey, decryptToBlob } from '../lib/e2ee/files.js';
 import { mediaUrl } from '../lib/config.js';
@@ -218,7 +219,8 @@ function contentForEncryption(m) {
     ...(m.forwarded && { forwarded: true }),
     ...(m.statusRef && { statusRef: m.statusRef }),
     ...(m.quoteRef && { quoteRef: m.quoteRef }),
-    ...(m.contact && { contact: m.contact }), // a shared contact card
+    ...(m.contact && { contact: m.contact }), // a shared contact (first version: one per message)
+    ...(m.contacts && { contacts: m.contacts }), // shared contacts (one or more in one card)
   };
 }
 
@@ -708,7 +710,7 @@ export const useChat = create((set, get) => {
       emitAck('conversation:read', { conversationId: convId, upTo }).catch(() => {});
     },
 
-    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef, quoteRef, contact }) {
+    sendMessage(convId, { type = 'text', text = '', media, replyTo, forwarded = false, poll, statusRef, quoteRef, contact, contacts }) {
       const clientId = uid();
       const optimistic = {
         id: clientId,
@@ -726,6 +728,7 @@ export const useChat = create((set, get) => {
         ...(quoteRef && { quoteRef }),
         // A shared contact: { name?, phones: [{ number, label? }] } (encrypted like the rest)
         ...(contact && { contact }),
+        ...(contacts && { contacts }), // [{ name?, phones }], up to 10
         ...(poll && {
           poll: { question: poll.question, options: poll.options.map((text, i) => ({ id: String(i), text })), multiple: !!poll.multiple, votes: [] },
         }),
@@ -1090,7 +1093,7 @@ export const useChat = create((set, get) => {
     /** An encrypted message was decrypted (or couldn't be): show it everywhere. */
     onRevealed(m) {
       if (!m?.conversationId) return;
-      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, quoteRef: m.quoteRef, contact: m.contact, e2eeState: m.e2eeState };
+      const shown = { text: m.text, type: m.type, media: m.media, poll: m.poll, viewOnce: m.viewOnce, forwarded: m.forwarded, statusRef: m.statusRef, quoteRef: m.quoteRef, contact: m.contact, contacts: m.contacts, e2eeState: m.e2eeState };
       patchItem(m.conversationId, m.id, shown);
       patchConversation(m.conversationId, (c) => (c.lastMessage?.id === m.id ? { lastMessage: { ...c.lastMessage, ...shown } } : {}));
       if (m.e2eeState === 'ok') patchStoredMessage({ id: m.id, conversationId: m.conversationId, ...shown });
@@ -1236,6 +1239,7 @@ export const useChat = create((set, get) => {
           text: msg.text,
           media: msg.media ? { ...msg.media } : undefined,
           ...(msg.contact && { contact: msg.contact }),
+          ...(msg.contacts && { contacts: msg.contacts }),
           forwarded: true,
         });
       }
@@ -1546,7 +1550,7 @@ export function previewText(msg) {
   }
   const labels = { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: '📄 ' };
   if (msg.type === 'poll') return `📊 ${msg.poll?.question || 'Poll'}`;
-  if (msg.type === 'contact') return `👤 ${msg.contact?.name || msg.contact?.phones?.[0]?.number || 'Contact'}`;
+  if (msg.type === 'contact') return cardsSummary(cardsOf(msg));
   if (msg.viewOnce) return msg.type === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)';
   if (msg.e2ee && msg.e2eeState !== 'ok' && !msg.text) return msg.e2eeState === 'before' ? '🔒 Message from before this device was linked' : '🔒 Message';
   const text = plainMentions(msg.text, useChat.getState().conversations[msg.conversationId], meId());

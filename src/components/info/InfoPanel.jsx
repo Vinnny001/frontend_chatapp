@@ -49,7 +49,7 @@ function MediaGrid({ convId }) {
 
   useEffect(() => {
     // Encrypted messages: what this device decrypted (the server can't see what they contain).
-    const local = e2ee.localMessages({ conversationId: convId }).filter((m) => !m.viewOnce && (m.media || (m.type === 'contact' && m.contact) || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
+    const local = e2ee.localMessages({ conversationId: convId }).filter((m) => !m.viewOnce && (m.media || m.type === 'contact' || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
     const localVisual = local.filter((m) => m.type === 'image' || m.type === 'video');
     api(`/api/conversations/shared?kind=media&limit=6&counts=1&conversationId=${convId}`)
       .then((d) => {
@@ -61,7 +61,7 @@ function MediaGrid({ convId }) {
         readMessages(convId, { limit: 2000 })
           .then((saved) => {
             const all = saved.map(e2ee.reveal);
-            const shared = all.filter((m) => !m.deletedForEveryone && (m.media || (m.type === 'contact' && m.contact) || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
+            const shared = all.filter((m) => !m.deletedForEveryone && (m.media || m.type === 'contact' || /(https?:\/\/|www\.)\S+/i.test(m.text || '')));
             const visual = shared.filter((m) => m.type === 'image' || m.type === 'video').reverse();
             setState({ items: visual.slice(0, 6), total: shared.length });
           })

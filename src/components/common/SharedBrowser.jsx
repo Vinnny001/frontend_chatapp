@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, Link2, Play, Search, Smartphone, Star, UserRound } from 'lucide-react';
-import { ContactDetails } from '../chat/ContactShare.jsx';
-import { cardNumbers, cardTitle, readCard } from '../../lib/contactCard.js';
+import { ContactsModal } from '../chat/ContactShare.jsx';
+import { cardNumbers, cardTitle, cardsOf } from '../../lib/contactCard.js';
 import { api } from '../../lib/api.js';
 import * as e2ee from '../../lib/e2ee/index.js';
 import { formatBytes, formatListTime } from '../../lib/format.js';
@@ -35,7 +35,7 @@ function matchesKind(m, kind) {
   const media = m.type === 'image' || m.type === 'video';
   const file = m.type === 'file' && !!m.media;
   const link = LINK.test(m.text || '');
-  const contact = m.type === 'contact' && !!m.contact;
+  const contact = m.type === 'contact' && cardsOf(m).length > 0;
   if (kind === 'media') return media;
   if (kind === 'docs') return file && !isApk(m);
   if (kind === 'apps') return file && isApk(m);
@@ -46,7 +46,10 @@ function matchesKind(m, kind) {
 }
 
 /** What search looks at in a message (a contact card: its name and numbers). */
-const searchable = (m) => `${m.text || ''} ${m.media?.name || ''} ${m.contact?.name || ''} ${(m.contact?.phones || []).map((p) => p.number).join(' ')}`.toLowerCase();
+const searchable = (m) =>
+  `${m.text || ''} ${m.media?.name || ''} ${cardsOf(m)
+    .map((c) => `${c.name || ''} ${c.phones.map((p) => p.number).join(' ')}`)
+    .join(' ')}`.toLowerCase();
 
 function Thumb({ message: m }) {
   const { src } = useMediaSrc(m.media?.url);
@@ -157,7 +160,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
     useUI.getState().closePanel();
   };
   const open = (m) => {
-    if (m.type === 'contact' && tab !== 'starred') return setViewing(readCard(m.contact));
+    if (m.type === 'contact' && tab !== 'starred') return setViewing(cardsOf(m));
     if (m.type === 'image' || m.type === 'video') return openViewer({ url: m.media.url, type: m.type, name: m.media.name });
     if (m.type === 'file' && tab !== 'links' && tab !== 'starred') return openDocument(m.media).catch((e) => toast(e.message, 'error'));
     const url = firstLink(m.text);
@@ -218,8 +221,9 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
             sub = m.text || '';
           } else if (m.type === 'contact') {
             icon = <UserRound size={20} />;
-            title = cardTitle(m.contact);
-            sub = m.contact?.name ? cardNumbers(m.contact) : '';
+            const cards = cardsOf(m);
+            title = cards.length > 1 ? `${cardTitle(cards[0])} and ${cards.length - 1} other contact${cards.length > 2 ? 's' : ''}` : cardTitle(cards[0]);
+            sub = cards.length > 1 ? cards.slice(1, 4).map(cardTitle).join(', ') : cards[0]?.name ? cardNumbers(cards[0]) : '';
           } else if (m.type === 'file') {
             icon = apk ? <Smartphone size={20} /> : <FileText size={20} />;
             title = m.media?.name || 'Document';
@@ -250,7 +254,7 @@ export default function SharedBrowser({ conversationId = null, initialTab = 'all
         })
       )}
 
-      {viewing && <ContactDetails card={viewing} user={undefined} onClose={() => setViewing(null)} />}
+      {viewing && <ContactsModal cards={viewing} onClose={() => setViewing(null)} />}
       {state.loading && <p className="panel-empty">Loading…</p>}
       {!state.loading && !items.length && (
         <p className="panel-empty">{q ? `Nothing matches “${q}”.` : `No ${SHARED_TABS.find((t) => t.id === tab).label.toLowerCase()} yet.`}</p>

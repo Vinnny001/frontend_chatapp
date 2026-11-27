@@ -40,7 +40,8 @@ import Modal from '../common/Modal.jsx';
 import { useAuth } from '../../store/auth.js';
 import { QUICK_REACTIONS } from '../../lib/emoji.js';
 import { formatBytes, formatTime, linkify } from '../../lib/format.js';
-import { ContactCard } from './ContactShare.jsx';
+import { ContactCards } from './ContactShare.jsx';
+import { cardsOf, cardsSummary } from '../../lib/contactCard.js';
 import { ensureMedia, mediaKind, useDownloadProgress, useIsStored, useMediaSrc } from '../../lib/media.js';
 import { shareFile } from '../../lib/share.js';
 import { connectionKind } from '../../lib/network.js';
@@ -190,7 +191,7 @@ function ReplyQuote({ reply: quoted, conv, me, onClick }) {
   const author = reply.sender === me ? 'You' : conv.participants.find((p) => p.id === reply.sender)?.name || 'Someone';
   const label = reply.deletedForEveryone
     ? 'This message was deleted'
-    : plainMentions(reply.text || (reply.e2ee && !inner ? '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}`, contact: `👤 ${inner?.contact?.name || inner?.contact?.phones?.[0]?.number || 'Contact'}` }[reply.type] || '';
+    : plainMentions(reply.text || (reply.e2ee && !inner ? '🔒 Message' : ''), conv, me) || { image: '📷 Photo', video: '🎥 Video', voice: '🎤 Voice message', audio: '🎵 Audio', file: `📄 ${reply.mediaName || 'Document'}`, contact: cardsSummary(cardsOf(inner)) }[reply.type] || '';
   return (
     <button className="reply-quote" onClick={onClick}>
       <span className="reply-body">
@@ -678,7 +679,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
       )}
       <div className="msg-stack" style={dx ? { transform: `translateX(${dx}px)` } : undefined}>
         <div
-          className={`bubble ${emojiOnly ? 'emoji-only' : ''} ${hasMedia && !special && !msg.text && msg.type !== 'file' && msg.type !== 'voice' ? 'media-only' : ''} ${msg.type === 'poll' ? 'poll-bubble' : ''}`}
+          className={`bubble ${emojiOnly ? 'emoji-only' : ''} ${hasMedia && !special && !msg.text && msg.type !== 'file' && msg.type !== 'voice' ? 'media-only' : ''} ${msg.type === 'poll' ? 'poll-bubble' : ''} ${msg.type === 'contact' && !deleted ? 'contact-bubble' : ''}`}
         >
           {!grouped && sender && <div className="sender-name" style={{ color: `hsl(${[...sender.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360} 60% 45%)` }}>{sender.name}</div>}
           {msg.forwarded && !deleted && (
@@ -727,7 +728,7 @@ function MessageBubble({ msg, conv, me, grouped, flash }) {
             <>
               {msg.viewOnce ? <ViewOnceBody msg={msg} conv={conv} me={me} /> : hasMedia && <Media msg={msg} />}
               {msg.poll && <PollBody msg={msg} conv={conv} me={me} />}
-              {msg.type === 'contact' && msg.contact && <ContactCard card={msg.contact} />}
+              {msg.type === 'contact' && <ContactCards cards={cardsOf(msg)} />}
               {msg.e2ee && !msg.text && msg.e2eeState !== 'ok' && <E2eeWaiting state={msg.e2eeState} />}
               {msg.text && (
                 <span className="text">
